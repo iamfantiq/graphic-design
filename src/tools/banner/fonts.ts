@@ -1,4 +1,5 @@
 import opentype, { type Font, type Glyph } from 'opentype.js'
+import { pathToD } from '../../lib/pathData'
 import interLatin from '@fontsource/inter/files/inter-latin-700-normal.woff?url'
 import interLatinExt from '@fontsource/inter/files/inter-latin-ext-700-normal.woff?url'
 import interCyr from '@fontsource/inter/files/inter-cyrillic-700-normal.woff?url'
@@ -45,7 +46,7 @@ export function textToPath(fonts: Font[], text: string, size: number, tracking =
     if (ch === ' ') f = main
     const g = f.charToGlyph(ch)
     if (prev && prev.f === f) x += (f.getKerningValue(prev.g, g) / f.unitsPerEm) * size
-    const p = g.getPath(x, 0, size).toPathData(3)
+    const p = pathToD(g.getPath(x, 0, size), 3)
     if (p) d += p
     x += ((g.advanceWidth ?? f.unitsPerEm * 0.5) / f.unitsPerEm) * size + tracking * size
     prev = { g, f }

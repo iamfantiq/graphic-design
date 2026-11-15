@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Dices, Lock, Unlock, Pencil, Package, X, Image as ImageIcon, Info } from 'lucide-react'
+import { Dices, Lock, Unlock, Pencil, Package, X, Image as ImageIcon, Info, Trash2, FolderOpen } from 'lucide-react'
 import { Button, Dropzone, Field, Panel, Select, Spinner, TextArea, TextInput } from '../../components/ui'
 import { contrast, extractPalette, rgbToHex, saturation, type RGB } from '../../lib/color'
 import { loadImageEl } from '../../lib/files'
@@ -9,6 +9,8 @@ import { ARCHETYPES, generate, type GenImage, type Idea } from './generator'
 import { renderScene } from './fabricScene'
 import type { Scene } from './scene'
 import Editor from './Editor'
+import { deleteDesign, listDesigns, onDesignsChange, type SavedDesign } from '../../lib/store'
+import type { DocFormat } from './design'
 import { kitPalette, useBrandKits } from '../../lib/brand'
 import { ALL_FONTS } from './design'
 import type { LoadedSource } from '../../lib/files'
@@ -43,7 +45,9 @@ export default function LayoutLab({ onSendToResizer }: { onSendToResizer: (s: Lo
   const [ideas, setIdeas] = useState<Idea[]>([])
   const [thumbs, setThumbs] = useState<Record<string, string>>({})
   const [ready, setReady] = useState(false)
-  const [editing, setEditing] = useState<{ scene: Scene; idea: Idea } | null>(null)
+  const [editing, setEditing] = useState<{ scene: Scene; title: string; format: DocFormat; json?: string; id?: string } | null>(null)
+  const [saved, setSaved] = useState<SavedDesign[]>([])
+  useEffect(() => { const load = () => listDesigns().then(setSaved); load(); return onDesignsChange(load) }, [])
   const [exporting, setExporting] = useState<string | null>(null)
   const fmt = DOC_FORMATS.find((f) => f.id === formatId)!
 
@@ -112,7 +116,7 @@ export default function LayoutLab({ onSendToResizer }: { onSendToResizer: (s: Lo
     setExporting(String(idea.seed))
     try {
       const files = []
-      for (const f of DOC_FORMATS) {
+      for (const f of DOC_FORMATS.filter((x) => ['a', '45', '11', '916', '169'].includes(x.id))) {
         const scene = generate(idea, f.w, f.h, content, img)
         const scale = f.print ? 2.83 : 1 // A-series at 2.83× ≈ A3 @ 300 dpi
         const url = await renderScene(scene, scale, 'png')
@@ -123,8 +127,11 @@ export default function LayoutLab({ onSendToResizer }: { onSendToResizer: (s: Lo
     } finally { setExporting(null) }
   }
 
+  const openIdea = (idea: Idea) => setEditing({ scene: generate(idea, fmt.w, fmt.h, content, img), format: fmt, title: `${content.title || 'Design'} — ${ARCHETYPES.find((a) => a.id === idea.archetype)?.name ?? ''}` })
+  const openSaved = (d: SavedDesign) => setEditing({ scene: { w: d.w, h: d.h, bg: '#ffffff', els: [] }, format: DOC_FORMATS.find((f) => f.id === d.formatId) ?? fmt, title: d.name, json: d.json, id: d.id })
+
   if (editing) {
-    return <Editor scene={editing.scene} kit={kit} title={ARCHETYPES.find((a) => a.id === editing.idea.archetype)?.name ?? 'Design'}
+    return <Editor key={editing.id ?? 'new'} scene={editing.scene} kit={kit} title={editing.title} format={editing.format} initialJson={editing.json} designId={editing.id}
       onBack={() => setEditing(null)} onSendToResizer={onSendToResizer} />
   }
 
@@ -205,6 +212,27 @@ export default function LayoutLab({ onSendToResizer }: { onSendToResizer: (s: Lo
           </div>
           <Button variant="primary" onClick={roll} disabled={!ready}><Dices className="h-4 w-4" />New ideas</Button>
         </div>
+        {saved.length > 0 && (
+          <section className="mb-8">
+            <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-ink-300"><FolderOpen className="h-4 w-4" />My designs <span className="font-normal text-ink-400">— saved on this device</span></h2>
+            <div className="flex gap-3 overflow-x-auto pb-2">
+              {saved.map((d) => (
+                <div key={d.id} className="group w-32 shrink-0">
+                  <button onClick={() => openSaved(d)} className="block w-full overflow-hidden rounded-md bg-ink-850 ring-1 ring-ink-800 hover:ring-acid/60">
+                    <img src={d.thumb} className="w-full" style={{ aspectRatio: `${d.w}/${d.h}`, objectFit: 'cover' }} />
+                  </button>
+                  <div className="mt-1 flex items-start justify-between gap-1">
+                    <div className="min-w-0 text-[11px]">
+                      <div className="truncate text-ink-100">{d.name}</div>
+                      <div className="text-ink-400">{new Date(d.updated).toLocaleDateString()}</div>
+                    </div>
+                    <button title="Delete" onClick={() => { if (confirm(`Delete “${d.name}”?`)) deleteDesign(d.id) }} className="p-0.5 text-ink-400 hover:text-red-300"><Trash2 className="h-3 w-3" /></button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
         {!ready && <Spinner label="Loading typefaces…" />}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(220px,1fr))] sm:gap-5">
           {ideas.map((idea) => {
@@ -213,10 +241,10 @@ export default function LayoutLab({ onSendToResizer }: { onSendToResizer: (s: Lo
             return (
               <div key={idea.seed} className="group">
                 <div className="relative overflow-hidden rounded-lg bg-ink-850 ring-1 ring-ink-800 transition group-hover:ring-ink-500" style={{ aspectRatio: `${fmt.w}/${fmt.h}` }}>
-                  {url ? <img src={url} className="h-full w-full cursor-pointer object-cover" onClick={() => setEditing({ scene: generate(idea, fmt.w, fmt.h, content, img), idea })} />
+                  {url ? <img src={url} className="h-full w-full cursor-pointer object-cover" onClick={() => openIdea(idea)} />
                     : <div className="flex h-full items-center justify-center"><Spinner /></div>}
                   <div className="absolute bottom-2 right-2 flex gap-1.5 transition md:inset-x-2 md:opacity-0 md:group-hover:opacity-100">
-                    <Button variant="primary" className="!hidden flex-1 !px-2 md:!inline-flex" onClick={() => setEditing({ scene: generate(idea, fmt.w, fmt.h, content, img), idea })}><Pencil className="h-3.5 w-3.5" />Edit</Button>
+                    <Button variant="primary" className="!hidden flex-1 !px-2 md:!inline-flex" onClick={() => openIdea(idea)}><Pencil className="h-3.5 w-3.5" />Edit</Button>
                     <Button className="!px-2" title="Reflow this layout into every format and download" onClick={() => exportReflow(idea)} disabled={!!exporting}>
                       {exporting === String(idea.seed) ? <Spinner /> : <Package className="h-3.5 w-3.5" />}
                     </Button>

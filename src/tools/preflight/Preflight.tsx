@@ -1,5 +1,9 @@
 import { useState } from 'react'
-import { CheckCircle2, AlertTriangle, XCircle, Info, RefreshCw } from 'lucide-react'
+import { CheckCircle2, AlertTriangle, XCircle, Info, RefreshCw, SpellCheck, Sparkles } from 'lucide-react'
+import { useEffect } from 'react'
+import { aiStatus, getCode, proofread, setCode } from '../../lib/ai'
+import type { Proof } from '../../../shared/proof'
+import { TextInput } from '../../components/ui'
 import { Button, Dropzone, Field, NumberInput, Panel, Select, Spinner, Toggle } from '../../components/ui'
 import { checkFile, PRODUCTS, type Level, type Report } from './check'
 
@@ -24,6 +28,22 @@ export default function Preflight() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [overlay, setOverlay] = useState(true)
+  const [ai, setAi] = useState<{ configured: boolean; needsCode: boolean } | null>(null)
+  const [code, setCodeState] = useState(getCode())
+  const [proof, setProof] = useState<Proof | null>(null)
+  const [proofBusy, setProofBusy] = useState(false)
+  const [proofErr, setProofErr] = useState<string | null>(null)
+  useEffect(() => { aiStatus().then(setAi) }, [])
+  async function runProof() {
+    if (!report) return
+    setProofBusy(true); setProofErr(null)
+    try {
+      const p = PRODUCTS.find((x) => x.id === product)!
+      const s = SIZES.find((x) => x.id === size)!
+      const sizeLabel = size === 'doc' ? `${Math.round(report.docMm.w)} × ${Math.round(report.docMm.h)} mm` : size === 'custom' ? `${custom.w} × ${custom.h} mm` : s.label
+      setProof(await proofread(report.hires ?? report.preview, { text: report.text, context: `${p.label}, printed at ${sizeLabel}` }))
+    } catch (e) { setProofErr((e as Error).message) } finally { setProofBusy(false) }
+  }
 
   async function run(f = file) {
     if (!f) return
@@ -33,6 +53,7 @@ export default function Preflight() {
       const s = SIZES.find((x) => x.id === size)!
       let target = size === 'doc' ? null : size === 'custom' ? custom : { w: s.w, h: s.h }
       if (target && landscape && size !== 'custom') target = { w: target.h, h: target.w }
+      setProof(null)
       setReport(await checkFile(f, p, target))
     } catch (e) { setError((e as Error).message); setReport(null) } finally { setBusy(false) }
   }
@@ -96,7 +117,31 @@ export default function Preflight() {
                 </div>
               </div>
               <Toggle checked={overlay} onChange={setOverlay} label="Show markers on preview" />
+              {ai?.configured && (
+                <div className="mt-4 rounded-xl border border-ink-800 bg-ink-900 p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-acid" />
+                    <span className="flex-1 text-sm">AI proofread — typos, wrong dates, missing info, legibility</span>
+                    {ai.needsCode && <div className="w-32"><TextInput type="password" placeholder="Access code" value={code} onChange={(e) => { setCodeState(e.target.value); setCode(e.target.value) }} /></div>}
+                    <Button onClick={runProof} disabled={proofBusy}>{proofBusy ? <Spinner label="Reading…" /> : <><SpellCheck className="h-4 w-4" />Proofread</>}</Button>
+                  </div>
+                  {proofErr && <p className="mt-2 text-xs text-red-300">{proofErr}</p>}
+                  {proof && <p className="mt-2 text-xs leading-relaxed text-ink-300">{proof.verdict}</p>}
+                </div>
+              )}
               <ul className="mt-4 space-y-2">
+                {proof?.findings.map((f, i) => {
+                  const I = f.level === 'fail' ? XCircle : f.level === 'warn' ? AlertTriangle : Info
+                  return (
+                    <li key={`ai${i}`} className="flex gap-3 rounded-lg border border-acid/30 bg-ink-900 p-3">
+                      <I className={`mt-0.5 h-4 w-4 shrink-0 ${COLOR[f.level]}`} />
+                      <div>
+                        <div className="text-sm font-medium text-ink-100">{f.title} <span className="ml-1 rounded bg-acid/15 px-1 text-[10px] font-normal text-acid">AI · {f.category}</span></div>
+                        <div className="text-xs leading-relaxed text-ink-400">{f.detail}</div>
+                      </div>
+                    </li>
+                  )
+                })}
                 {[...report.findings].sort((a, b) => ['fail', 'warn', 'info', 'pass'].indexOf(a.level) - ['fail', 'warn', 'info', 'pass'].indexOf(b.level)).map((f, i) => {
                   const I = ICON[f.level]
                   return (

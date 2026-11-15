@@ -44,14 +44,25 @@ export async function ensureFonts(pair: FontPair) {
   ]).catch(() => {})
 }
 
-export interface DocFormat { id: string; label: string; w: number; h: number; print?: boolean }
+export interface PrintSize { label: string; w: number; h: number } // mm
+export interface DocFormat { id: string; label: string; w: number; h: number; print?: boolean; sizes: PrintSize[] }
+
+const A_SERIES: PrintSize[] = [
+  { label: 'A5', w: 148, h: 210 }, { label: 'A4', w: 210, h: 297 }, { label: 'A3', w: 297, h: 420 },
+  { label: 'A2', w: 420, h: 594 }, { label: 'A1', w: 594, h: 841 }, { label: 'A0', w: 841, h: 1189 },
+]
+const px96 = (w: number, h: number): PrintSize[] => [{ label: 'Screen size (96 dpi)', w: Math.round(w * 0.2646 * 10) / 10, h: Math.round(h * 0.2646 * 10) / 10 }]
+
 export const DOC_FORMATS: DocFormat[] = [
-  { id: 'a', label: 'Poster A-series (1:√2)', w: 1240, h: 1754, print: true },
-  { id: '23', label: 'Poster 2:3', w: 1200, h: 1800, print: true },
-  { id: '45', label: 'Instagram 4:5', w: 1080, h: 1350 },
-  { id: '11', label: 'Square 1:1', w: 1080, h: 1080 },
-  { id: '916', label: 'Story 9:16', w: 1080, h: 1920 },
-  { id: '169', label: 'Landscape 16:9', w: 1920, h: 1080 },
+  { id: 'a', label: 'Poster A-series (A5–A0)', w: 1240, h: 1754, print: true, sizes: A_SERIES },
+  { id: '57', label: 'Poster 50×70 / 70×100 cm', w: 1200, h: 1680, print: true, sizes: [{ label: '50 × 70 cm', w: 500, h: 700 }, { label: '70 × 100 cm', w: 700, h: 1000 }] },
+  { id: '23', label: 'Poster 2:3', w: 1200, h: 1800, print: true, sizes: [{ label: '40 × 60 cm', w: 400, h: 600 }, { label: '60 × 90 cm', w: 600, h: 900 }, { label: '24 × 36 in', w: 610, h: 914 }] },
+  { id: 'dl', label: 'Flyer DL (99 × 210)', w: 990, h: 2100, print: true, sizes: [{ label: 'DL 99 × 210', w: 99, h: 210 }] },
+  { id: 'card', label: 'Business card (85 × 55)', w: 1020, h: 660, print: true, sizes: [{ label: '85 × 55 mm', w: 85, h: 55 }] },
+  { id: '45', label: 'Instagram 4:5', w: 1080, h: 1350, sizes: px96(1080, 1350) },
+  { id: '11', label: 'Square 1:1', w: 1080, h: 1080, sizes: px96(1080, 1080) },
+  { id: '916', label: 'Story 9:16', w: 1080, h: 1920, sizes: px96(1080, 1920) },
+  { id: '169', label: 'Landscape 16:9', w: 1920, h: 1080, sizes: px96(1920, 1080) },
 ]
 
 export interface Content {

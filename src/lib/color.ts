@@ -107,3 +107,18 @@ export function extractPalette(source: CanvasImageSource, k = 6): { color: RGB; 
   }
   return merged
 }
+
+/** Rough check for colours brighter/more saturated than process CMYK can print (neons, RGB primaries). */
+export function outOfGamut(hex: string) {
+  const [r, g, b] = hexToRgb(hex)
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b)
+  if (mx < 200 || (mx - mn) / mx < 0.7) return false
+  // vivid blues/violets, neon pinks, acid greens and pure RGB primaries print noticeably duller
+  const h = ((): number => {
+    const d = mx - mn
+    if (mx === r) return ((g - b) / d + 6) % 6 * 60
+    if (mx === g) return ((b - r) / d + 2) * 60
+    return ((r - g) / d + 4) * 60
+  })()
+  return (h >= 200 && h <= 340) || (h >= 70 && h <= 160) || mx - mn > 230
+}

@@ -58,7 +58,7 @@ function Preview({ item, fmt, adj, selected, onSelect, onPan, showSafe }: {
 }) {
   const ref = useRef<HTMLCanvasElement>(null)
   const [res, setRes] = useState<{ placement: string; fill: string } | null>(null)
-  const scale = 520 / Math.max(fmt.w, fmt.h)
+  const scale = (fmt.slices ? 900 : 520) / Math.max(fmt.w, fmt.h)
   useEffect(() => {
     if (ref.current) setRes(renderFormat(item.preview, fmt, adj, ref.current, scale, item.ai))
   }, [item.preview, item.ai, fmt, adj, scale])
@@ -66,7 +66,7 @@ function Preview({ item, fmt, adj, selected, onSelect, onPan, showSafe }: {
   const reason = item.ai?.analysis.formats.find((f) => f.id === fmt.id)?.reasoning
   return (
     <div onClick={onSelect}
-      className={`group flex flex-col rounded-xl border p-3 transition-colors ${selected ? 'border-acid bg-ink-850' : 'border-ink-800 bg-ink-900 hover:border-ink-600'}`}>
+      className={`group flex flex-col rounded-xl border p-3 transition-colors ${fmt.slices ? 'col-span-full' : ''} ${selected ? 'border-acid bg-ink-850' : 'border-ink-800 bg-ink-900 hover:border-ink-600'}`}>
       <div className="mb-2 flex items-center justify-between text-xs">
         <span className="font-medium text-ink-100">{fmt.short} <span className="text-ink-400">· {fmt.label}</span></span>
         <span className="font-mono text-ink-400">{fmt.w}×{fmt.h}</span>
@@ -84,6 +84,11 @@ function Preview({ item, fmt, adj, selected, onSelect, onPan, showSafe }: {
               onPan(nx, ny)
             }}
             onPointerUp={() => { drag.current = null }} />
+          {fmt.slices && (
+            <div className="pointer-events-none absolute inset-0 flex">
+              {Array.from({ length: fmt.slices }, (_, i) => <div key={i} className="flex-1 border-r border-dashed border-white/70 last:border-r-0"><span className="m-1 inline-block rounded bg-black/60 px-1 font-mono text-[10px] text-white">{i + 1}</span></div>)}
+            </div>
+          )}
           {showSafe && fmt.safe && (
             <div className="pointer-events-none absolute inset-0">
               <div className="absolute inset-x-0 top-0 bg-red-500/25" style={{ height: `${(fmt.safe.top / fmt.h) * 100}%` }} />
@@ -115,6 +120,7 @@ export default function Resizer({ handoff }: { handoff?: LoadedSource | null }) 
   const [format, setFormat] = useState<'png' | 'jpg'>('png')
   const [showSafe, setShowSafe] = useState(true)
   const [showBoxes, setShowBoxes] = useState(true)
+  const [carousel, setCarousel] = useState<{ on: boolean; n: number; ratio: '4:5' | '1:1' }>({ on: false, n: 3, ratio: '4:5' })
   const [exporting, setExporting] = useState(false)
   const [ai, setAi] = useState<AiStatus | null>(null)
   const [code, setCodeState] = useState(getCode())
@@ -153,7 +159,10 @@ export default function Resizer({ handoff }: { handoff?: LoadedSource | null }) 
     } finally { setLoading(null) }
   }
 
-  const formats = FORMATS.filter((f) => enabled.includes(f.id))
+  const carouselFmt: FormatSpec | null = carousel.on
+    ? { id: 'carousel', label: `Carousel · ${carousel.n} slides`, short: `${carousel.n}×${carousel.ratio}`, w: 1080 * carousel.n, h: carousel.ratio === '4:5' ? 1350 : 1080, slices: carousel.n }
+    : null
+  const formats = [...FORMATS.filter((f) => enabled.includes(f.id)), ...(carouselFmt ? [carouselFmt] : [])]
   const sel = formats.find((f) => f.id === selected) ?? formats[0]
   const adj = (it: Item, id: string) => it.adjust[id] ?? DEFAULT_ADJUST
   const update = (id: string, patch: Partial<Adjust>) => item && patchItem(item.id, (x) => ({ adjust: { ...x.adjust, [id]: { ...adj(x, id), ...patch } } }))
@@ -176,13 +185,28 @@ export default function Resizer({ handoff }: { handoff?: LoadedSource | null }) 
     renderFormat(it.full, fmt, adj(it, fmt.id), c, 1, it.ai)
     return canvasToBlob(c, format === 'png' ? 'image/png' : 'image/jpeg', 0.93)
   }
+  /** Carousel: render the whole panorama once, then cut it into seamless slides. */
+  async function renderFiles(it: Item, fmt: FormatSpec): Promise<{ name: string; data: Blob }[]> {
+    if (!fmt.slices) return [{ name: fileName(it, fmt), data: await renderBlob(it, fmt) }]
+    const c = document.createElement('canvas')
+    renderFormat(it.full, fmt, adj(it, fmt.id), c, 1, it.ai)
+    const sw = fmt.w / fmt.slices
+    const out = []
+    for (let i = 0; i < fmt.slices; i++) {
+      const s = document.createElement('canvas')
+      s.width = sw; s.height = fmt.h
+      s.getContext('2d')!.drawImage(c, i * sw, 0, sw, fmt.h, 0, 0, sw, fmt.h)
+      out.push({ name: `${name(it)}_carousel_${String(i + 1).padStart(2, '0')}of${fmt.slices}.${format}`, data: await canvasToBlob(s, format === 'png' ? 'image/png' : 'image/jpeg', 0.93) })
+    }
+    return out
+  }
   async function exportAll() {
     setExporting(true)
     try {
       const files = []
       const multi = items.length > 1
       for (const it of items) for (const f of formats)
-        files.push({ name: (multi ? `${name(it)}/` : '') + fileName(it, f), data: await renderBlob(it, f) })
+        for (const file of await renderFiles(it, f)) files.push({ name: (multi ? `${name(it)}/` : '') + file.name, data: file.data })
       await downloadZip(files, multi ? `formatter_batch_${items.length}-files.zip` : `${name(items[0])}_social.zip`)
     } finally { setExporting(false) }
   }
@@ -245,6 +269,14 @@ export default function Resizer({ handoff }: { handoff?: LoadedSource | null }) 
               <span className="truncate text-xs text-ink-400">{f.label}</span>
             </label>
           ))}
+        </Panel>
+        <Panel title="Carousel">
+          <Toggle checked={carousel.on} onChange={(v) => setCarousel({ ...carousel, on: v })} label="Panorama carousel (swipe across)" />
+          {carousel.on && (<>
+            <Slider label="Slides" value={carousel.n} min={2} max={10} onChange={(v) => setCarousel({ ...carousel, n: v })} />
+            <Segmented value={carousel.ratio} onChange={(v) => setCarousel({ ...carousel, ratio: v })} options={[{ value: '4:5', label: '4:5 slides' }, { value: '1:1', label: '1:1 slides' }]} />
+            <p className="text-xs text-ink-400">One wide image cut into seamless slides — post them in order as one carousel. Works best with a wide design ({carousel.n * 1080}×{carousel.ratio === '4:5' ? 1350 : 1080} px); drag the preview to choose the crop.</p>
+          </>)}
         </Panel>
         <Panel title="Export">
           <Segmented value={format} onChange={setFormat} options={[{ value: 'png', label: 'PNG' }, { value: 'jpg', label: 'JPG' }]} />
@@ -354,7 +386,11 @@ export default function Resizer({ handoff }: { handoff?: LoadedSource | null }) 
           </Panel>
 
           <Panel title="Download">
-            <Button className="w-full" onClick={async () => downloadBlob(await renderBlob(item, sel), fileName(item, sel))}>
+            <Button className="w-full" onClick={async () => {
+              const files = await renderFiles(item, sel)
+              if (files.length === 1) downloadBlob(files[0].data, files[0].name)
+              else await downloadZip(files, `${name(item)}_carousel.zip`)
+            }}>
               <Download className="h-4 w-4" /> {sel.short} as {format.toUpperCase()}
             </Button>
           </Panel>

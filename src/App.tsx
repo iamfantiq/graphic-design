@@ -10,9 +10,9 @@ import type { LoadedSource } from './lib/files'
 
 type Tool = 'home' | 'resize' | 'banner' | 'layouts' | 'check' | 'brand'
 const TOOLS: { id: Exclude<Tool, 'home'>; label: string; icon: typeof HomeIcon; blurb: string }[] = [
-  { id: 'resize', label: 'Social Resizer', icon: Maximize2, blurb: 'One poster in — 1:1, 4:5, 9:16, 16:9 and more out. Works with .ai, PDF, SVG, PNG, JPG.' },
-  { id: 'banner', label: 'Logo → Print Banner', icon: Printer, blurb: 'Turn any logo into a clean vector PDF for large-format print: 3×1 m banners, roll-ups, press walls.' },
-  { id: 'layouts', label: 'Layout Lab', icon: LayoutGrid, blurb: 'Grid-based poster ideas driven by your references, with a full editor built in.' },
+  { id: 'resize', label: 'Social Resizer', icon: Maximize2, blurb: 'One poster — or a whole campaign — in; 1:1, 4:5, 9:16, 16:9 and panorama carousels out. Smart crop keeps titles safe; optional AI layout.' },
+  { id: 'banner', label: 'Logo → Print Banner', icon: Printer, blurb: 'Any logo → clean vector PDF for large-format print: 3×1 m banners, roll-ups, sponsor walls, with QR codes, CMYK, bleed and crop marks.' },
+  { id: 'layouts', label: 'Layout Lab', icon: LayoutGrid, blurb: 'Grid-based poster ideas from your references, a full editor, and print-ready vector PDFs from A5 to A0 and business cards.' },
   { id: 'check', label: 'Print Check', icon: ShieldCheck, blurb: 'Preflight before you send: real-size resolution, bleed, fonts, RGB/CMYK, hairlines, text near the edge.' },
   { id: 'brand', label: 'Brand Kits', icon: Palette, blurb: 'Each client’s logo, colours with official CMYK, and fonts — used by every tool.' },
 ]

@@ -2,6 +2,7 @@ import { PDFDocument, StandardFonts, cmyk, rgb, type Color, type PDFEmbeddedPage
 import { hexToRgb, rgbToCmyk } from '../../lib/color'
 import type { Logo } from './logo'
 import { loadFamily, textToPath, type FontKey } from './fonts'
+import { qrPath } from '../../lib/qr'
 
 export type Layout = 'center' | 'left' | 'right' | 'repeat'
 
@@ -30,6 +31,10 @@ export interface BannerConfig {
   repeatSize: number // logo height in mm for step & repeat
   repeatGap: number // fraction of logo width
   repeatStagger: boolean
+  qrText: string
+  qrSize: number // mm, including quiet zone
+  qrCorner: 'br' | 'bl' | 'tr' | 'tl'
+  qrTile: boolean
 }
 
 export const DEFAULT_CONFIG: BannerConfig = {
@@ -37,6 +42,7 @@ export const DEFAULT_CONFIG: BannerConfig = {
   bg: '#ffffff', cmykOverrides: {}, layout: 'center', logoSize: 0.6, offsetX: 0, offsetY: 0, logoColorMap: {},
   text1: '', text2: '', textColor: '#111111', font: 'inter', textSize: 0.22, tracking: 0, uppercase: false,
   repeatSize: 180, repeatGap: 0.6, repeatStagger: true,
+  qrText: '', qrSize: 150, qrCorner: 'br', qrTile: true,
 }
 
 /** PDF pages are limited to 200 × 200 in (5080 mm). Larger formats are built at 1:10 — standard practice for large-format print. */
@@ -135,7 +141,7 @@ async function logoPage(doc: PDFDocument, logo: Logo, cfg: BannerConfig): Promis
   })
 }
 
-export async function buildBannerPdf(cfg: BannerConfig, logo: Logo | null, fileLabel: string): Promise<Uint8Array> {
+export async function buildBannerPdf(cfg: BannerConfig, logo: Logo | null, fileLabel: string, extras: Logo[] = []): Promise<Uint8Array> {
   const g = geometry(cfg)
   const doc = await PDFDocument.create()
   doc.setTitle(`${fileLabel} ${cfg.widthMm}x${cfg.heightMm}mm`)
@@ -155,19 +161,26 @@ export async function buildBannerPdf(cfg: BannerConfig, logo: Logo | null, fileL
   if (logo) {
     const emb = await logoPage(doc, logo, cfg)
     if (cfg.layout === 'repeat') {
-      const h = cfg.repeatSize, w = h * logo.aspect
+      // Every logo sits in the same cell (contained), so mixed shapes still form a regular wall.
+      const all = [logo, ...extras]
+      const embs = [emb, ...(await Promise.all(extras.map((x) => logoPage(doc, x, cfg))))]
+      const h = cfg.repeatSize
+      const w = h * Math.min(3, Math.max(...all.map((l) => l.aspect)))
       const stepX = w * (1 + cfg.repeatGap), stepY = h * (1 + cfg.repeatGap * 0.8)
       const x0 = -cfg.bleedMm, y0 = -cfg.bleedMm, x1 = cfg.widthMm + cfg.bleedMm, y1 = cfg.heightMm + cfg.bleedMm
-      // centre the grid on the trim
       const cols = Math.ceil((x1 - x0) / stepX) + 2, rows = Math.ceil((y1 - y0) / stepY) + 2
       const startX = cfg.widthMm / 2 - Math.floor(cols / 2) * stepX - w / 2
       const startY = cfg.heightMm / 2 - Math.floor(rows / 2) * stepY - h / 2
+      const n = all.length
       for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols + 1; c++) {
           const x = startX + c * stepX + (cfg.repeatStagger && r % 2 ? stepX / 2 : 0)
           const y = startY + r * stepY
           if (x + w < x0 || x > x1 || y + h < y0 || y > y1) continue
-          page.drawPage(emb, { x: X(x), y: Y(y + h), width: w * g.k, height: h * g.k })
+          const i = n === 1 ? 0 : (c + r * (n > 2 ? 2 : 1)) % n
+          const a = all[i].aspect
+          const lw = Math.min(w, h * a), lh = lw / a
+          page.drawPage(embs[i], { x: X(x + (w - lw) / 2), y: Y(y + (h + lh) / 2), width: lw * g.k, height: lh * g.k })
         }
       }
     } else {
@@ -193,6 +206,15 @@ export async function buildBannerPdf(cfg: BannerConfig, logo: Logo | null, fileL
         page.drawSvgPath(shape.d, { x: X(x), y: Y(line.y), scale, color: colorFor(cfg, cfg.textColor), borderWidth: 0 })
       }
     }
+  }
+
+  if (cfg.qrText.trim()) {
+    const { d, size } = qrPath(cfg.qrText.trim())
+    const s = Math.min(cfg.qrSize, cfg.heightMm - 2 * cfg.safeMm, cfg.widthMm - 2 * cfg.safeMm)
+    const x = cfg.qrCorner.endsWith('l') ? cfg.safeMm : cfg.widthMm - cfg.safeMm - s
+    const y = cfg.qrCorner.startsWith('t') ? cfg.safeMm : cfg.heightMm - cfg.safeMm - s
+    if (cfg.qrTile) page.drawRectangle({ x: X(x), y: Y(y + s), width: s * g.k, height: s * g.k, color: colorFor(cfg, '#ffffff'), borderWidth: 0 })
+    page.drawSvgPath(d, { x: X(x), y: Y(y), scale: (s * g.k) / size, color: colorFor(cfg, cfg.qrTile ? '#000000' : cfg.textColor), borderWidth: 0 })
   }
 
   if (cfg.cropMarks) {

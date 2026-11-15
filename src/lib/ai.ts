@@ -1,4 +1,5 @@
 import type { Analysis, AnalyzeRequest } from '../../shared/analysis'
+import type { Proof, ProofRequest } from '../../shared/proof'
 
 export interface AiStatus { configured: boolean; needsCode: boolean }
 
@@ -32,4 +33,27 @@ export async function analyzePoster(src: HTMLCanvasElement, formats: AnalyzeRequ
   const j = await r.json().catch(() => ({ error: `Server error ${r.status}` }))
   if (!r.ok) throw new Error(j.error ?? `Server error ${r.status}`)
   return { analysis: j.analysis as Analysis, width: c.width, height: c.height }
+}
+
+function toJpeg(src: HTMLCanvasElement, long: number, q = 0.88) {
+  const s = Math.min(1, long / Math.max(src.width, src.height))
+  const c = document.createElement('canvas')
+  c.width = Math.round(src.width * s); c.height = Math.round(src.height * s)
+  const ctx = c.getContext('2d')!
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height)
+  ctx.drawImage(src, 0, 0, c.width, c.height)
+  return c.toDataURL('image/jpeg', q).split(',')[1]
+}
+
+/** Proofread a design: typos, wrong facts, missing info, legibility. Uses a sharper image than layout analysis. */
+export async function proofread(src: HTMLCanvasElement, extra: Omit<ProofRequest, 'image'> = {}): Promise<Proof> {
+  const body: ProofRequest = { image: toJpeg(src, 1800, 0.85), ...extra }
+  const r = await fetch('/api/proof', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-access-code': getCode() },
+    body: JSON.stringify(body),
+  })
+  const j = await r.json().catch(() => ({ error: `Server error ${r.status}` }))
+  if (!r.ok) throw new Error(j.error ?? `Server error ${r.status}`)
+  return j.proof as Proof
 }

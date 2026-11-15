@@ -23,6 +23,10 @@ export interface Report {
   docMm: { w: number; h: number }
   findings: Finding[]
   markers: Marker[]
+  /** sharper render for AI proofreading */
+  hires?: HTMLCanvasElement
+  /** live text from the PDF */
+  text?: string
   /** trim / bleed boxes as page fractions for overlay */
   trim?: { x0: number; y0: number; x1: number; y1: number }
   safe?: { x0: number; y0: number; x1: number; y1: number }
@@ -69,7 +73,11 @@ async function checkRaster(file: File, p: Product, target: { w: number; h: numbe
   const needW = Math.ceil(((t.w + 2 * p.bleed) / 25.4) * p.good), needH = Math.ceil(((t.h + 2 * p.bleed) / 25.4) * p.good)
   findings.push({ level: 'info', title: 'Bleed cannot be verified in a flat image', detail: `Ideal file for ${fmt(t.w)} × ${fmt(t.h)} mm with ${p.bleed} mm bleed: ${needW} × ${needH} px. Raster files usually arrive RGB — printers convert to CMYK, so check saturated brand colours on a proof.` })
   if (/\.jpe?g$/i.test(file.name)) findings.push({ level: 'info', title: 'JPEG compression', detail: 'Fine for photos. For type and logos, a PDF with vector content prints sharper at any size.' })
-  return { name: file.name, kind: 'raster', preview, pages: 1, docMm: { w: (W / 300) * 25.4, h: (H / 300) * 25.4 }, findings, markers: [] }
+  const hires = document.createElement('canvas')
+  const hs = Math.min(1, 1800 / Math.max(W, H))
+  hires.width = Math.round(W * hs); hires.height = Math.round(H * hs)
+  hires.getContext('2d')!.drawImage(img, 0, 0, hires.width, hires.height)
+  return { hires, name: file.name, kind: 'raster', preview, pages: 1, docMm: { w: (W / 300) * 25.4, h: (H / 300) * 25.4 }, findings, markers: [] }
 }
 
 function box(page: ReturnType<PDFDocument['getPage']>, name: 'TrimBox' | 'BleedBox') {
@@ -213,6 +221,12 @@ async function checkPdf(file: File, p: Product, target: { w: number; h: number }
   if (hairlines) findings.push({ level: 'warn', title: `${hairlines} hairline stroke(s)`, detail: 'Lines thinner than 0.25 pt at print size may disappear or break up. Use at least 0.25–0.5 pt.' })
 
   const text = await pg.getTextContent()
+  const liveText = text.items.map((it) => ('str' in it ? it.str + (it.hasEOL ? '\n' : ' ') : '')).join('').trim()
+  const hs = 1800 / Math.max(vp1.width, vp1.height)
+  const hvp = pg.getViewport({ scale: hs })
+  const hires = document.createElement('canvas')
+  hires.width = Math.round(hvp.width); hires.height = Math.round(hvp.height)
+  await pg.render({ canvas: hires, viewport: hvp }).promise
   let nearEdge = 0
   for (const it of text.items) {
     if (!('str' in it) || !it.str.trim()) continue
@@ -228,7 +242,7 @@ async function checkPdf(file: File, p: Product, target: { w: number; h: number }
 
   await task.destroy()
   return {
-    name: file.name, kind: 'pdf', preview, pages, docMm: trimMm, findings, markers,
+    name: file.name, kind: 'pdf', preview, pages, docMm: trimMm, findings, markers, hires, text: liveText || undefined,
     trim: { x0: tr.x, y0: tr.y, x1: tr.x + tr.w, y1: tr.y + tr.h },
     safe: { x0: sf.x, y0: sf.y, x1: sf.x + sf.w, y1: sf.y + sf.h },
   }

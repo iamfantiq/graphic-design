@@ -30,6 +30,15 @@ Turns a logo into a clean **vector PDF** for large-format print.
 - PDF pages are limited to 5.08 m, so larger formats are built at **1:10** and labelled as such.
 - The live preview is the real PDF rendered with pdf.js, so the preview matches the print file.
 
+### Also in the toolkit
+- **Vector print PDF from the editor**: text is converted to outlines with the same font files used on screen, shapes stay vector, and photos keep full resolution. Paper sizes run from A5 to A0, 50×70, 70×100, 2:3, DL and business cards. Includes CMYK with brand-kit overrides, bleed (edge-touching elements are extended into it), crop marks, Trim/BleedBox, and a warning when a colour is out of the CMYK gamut.
+- **QR codes**: vector QR codes in the editor and on banners, with an optional black-on-white tile so they scan on any background.
+- **Sponsor walls**: step & repeat with several logos alternating in a regular grid.
+- **Panorama carousel**: one wide image is cut into 2–10 seamless 4:5 or 1:1 slides.
+- **Saved designs**: editor work autosaves to IndexedDB (on this device) and appears under *My designs*.
+- **AI proofread** (Claude): typos, wrong date/weekday pairs, missing info, legibility, contrast and hierarchy. Available in Print Check and the editor (`api/proof.ts`).
+- **Installable / offline**: PWA manifest and service worker. Everything except AI works without a connection.
+
 ### 3. Print Check (preflight)
 Resolution at the real print size (per image, accounting for 1:10 files), bleed against product needs, TrimBox, unembedded fonts, RGB/CMYK/spot colour, hairlines under 0.25 pt, and live text inside the danger zone. Problems are marked on a preview.
 

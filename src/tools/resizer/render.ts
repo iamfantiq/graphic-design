@@ -12,6 +12,8 @@ export interface FormatSpec {
   w: number
   h: number
   safe?: { top: number; bottom: number; left?: number; right?: number; note: string }
+  /** carousel: number of equal slides the image is cut into */
+  slices?: number
 }
 
 export const FORMATS: FormatSpec[] = [
@@ -61,6 +63,7 @@ export function resolvePlacement(src: SourceInfo, fmt: FormatSpec, adj: Adjust, 
     if (adj.placement === 'recompose' && !aiFormat(ai, fmt)?.placements.length) return 'smart'
     return adj.placement
   }
+  if (fmt.slices) return 'fill' // a carousel is a panorama: fill the full width
   const f = aiFormat(ai, fmt)
   if (f) return f.strategy === 'crop' ? 'smart' : f.strategy === 'recompose' && f.placements.length ? 'recompose' : f.strategy === 'fit' ? 'fit' : 'smart'
   const ratio = Math.abs(Math.log((src.canvas.width / src.canvas.height) / (fmt.w / fmt.h)))

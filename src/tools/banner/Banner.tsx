@@ -57,6 +57,7 @@ function CmykFields({ hex, cfg, set }: { hex: string; cfg: BannerConfig; set: (c
 export default function Banner() {
   const [logo, setLogo] = useState<Logo | null>(null)
   const [logoFile, setLogoFile] = useState<File | null>(null)
+  const [extras, setExtras] = useState<Logo[]>([])
   const [trace, setTrace] = useState<TraceOptions>(DEFAULT_TRACE)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -90,7 +91,7 @@ export default function Banner() {
     const t = setTimeout(async () => {
       setPreviewing(true)
       try {
-        const bytes = await buildBannerPdf(cfg, logo, baseName(logo?.name ?? 'banner'))
+        const bytes = await buildBannerPdf(cfg, logo, baseName(logo?.name ?? 'banner'), extras)
         if (cancelled) return
         pdfRef.current = bytes
         const host = canvasHost.current
@@ -103,7 +104,7 @@ export default function Banner() {
       } catch (e) { if (!cancelled) setError((e as Error).message) } finally { if (!cancelled) setPreviewing(false) }
     }, 350)
     return () => { cancelled = true; clearTimeout(t) }
-  }, [cfg, logo])
+  }, [cfg, logo, extras])
 
   const g = geometry(cfg)
   const pageWmm = cfg.widthMm + 2 * (cfg.bleedMm + g.slug)
@@ -115,7 +116,7 @@ export default function Banner() {
   async function downloadPdf() {
     setBusy('Building print PDF…')
     try {
-      const bytes = await buildBannerPdf(cfg, logo, baseName(logo?.name ?? 'banner'))
+      const bytes = await buildBannerPdf(cfg, logo, baseName(logo?.name ?? 'banner'), extras)
       downloadBlob(new Blob([bytes.slice()], { type: 'application/pdf' }), fileName)
     } finally { setBusy(null) }
   }
@@ -266,6 +267,23 @@ export default function Banner() {
             <Slider label="Logo height" value={cfg.repeatSize} min={40} max={Math.max(100, Math.round(cfg.heightMm / 2))} onChange={(v) => set({ repeatSize: v })} format={(v) => `${v} mm`} />
             <Slider label="Spacing" value={cfg.repeatGap} min={0.1} max={2} step={0.05} onChange={(v) => set({ repeatGap: v })} format={(v) => `${Math.round(v * 100)}%`} />
             <Toggle checked={cfg.repeatStagger} onChange={(v) => set({ repeatStagger: v })} label="Staggered rows (classic press wall)" />
+            <div className="border-t border-ink-800 pt-3">
+              <div className="mb-2 text-xs text-ink-300">Sponsor wall — more logos, alternating</div>
+              <div className="mb-2 flex flex-wrap gap-2">
+                {extras.map((x, i) => (
+                  <div key={i} className="checker group relative flex h-12 w-16 items-center justify-center rounded p-1">
+                    <img src={x.preview.toDataURL()} className="max-h-full max-w-full" />
+                    <button onClick={() => setExtras(extras.filter((_, j) => j !== i))} className="absolute -right-1 -top-1 rounded-full bg-ink-700 px-1 text-[10px]">✕</button>
+                  </div>
+                ))}
+              </div>
+              <Dropzone compact multiple accept=".svg,.pdf,.ai,.png,.jpg,.jpeg,.webp,image/*,application/pdf" title="Add sponsor logos"
+                onFiles={async (fs) => {
+                  setBusy('Adding logos…')
+                  try { for (const f of fs) { const l = isVectorFile(f) ? await loadVectorLogo(f) : await traceRaster(f, trace); setExtras((e) => [...e, l]) } }
+                  catch (e) { setError((e as Error).message) } finally { setBusy(null) }
+                }} />
+            </div>
           </>) : (<>
             <Slider label="Logo size" value={cfg.logoSize} min={0.1} max={1} step={0.01} onChange={(v) => set({ logoSize: v })} format={(v) => `${Math.round(v * 100)}% of safe height`} />
             <Slider label="Horizontal position" value={cfg.offsetX} min={-1} max={1} step={0.01} onChange={(v) => set({ offsetX: v })} format={(v) => v.toFixed(2)} />
@@ -290,6 +308,17 @@ export default function Banner() {
             </>)}
           </Panel>
         )}
+
+        <Panel title="QR code (vector)">
+          <TextInput placeholder="https://… link for tickets, menu, site" value={cfg.qrText} onChange={(e) => set({ qrText: e.target.value })} />
+          {cfg.qrText.trim() && (<>
+            <Slider label="Size" value={cfg.qrSize} min={40} max={Math.max(60, Math.round(Math.min(cfg.widthMm, cfg.heightMm) - 2 * cfg.safeMm))} onChange={(v) => set({ qrSize: v })} format={(v) => `${v} mm`} />
+            <Segmented value={cfg.qrCorner} onChange={(v) => set({ qrCorner: v })}
+              options={[{ value: 'tl', label: '↖' }, { value: 'tr', label: '↗' }, { value: 'bl', label: '↙' }, { value: 'br', label: '↘' }]} />
+            <Toggle checked={cfg.qrTile} onChange={(v) => set({ qrTile: v })} label="Black on white tile (scans everywhere)" />
+            <p className="text-xs text-ink-400">Scannable from about {((cfg.qrSize * 10) / 1000).toFixed(1)} m (rule of thumb: distance ≈ 10 × QR width). Always test-scan the proof.</p>
+          </>)}
+        </Panel>
 
         <Panel title="Export">
           <Button variant="primary" className="w-full" onClick={downloadPdf} disabled={!!busy}><Download className="h-4 w-4" />Download print PDF</Button>
