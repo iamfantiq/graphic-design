@@ -4,7 +4,7 @@ import { jsPDF } from 'jspdf'
 import {
   ArrowLeft, Type, Square, Circle as CircleIcon, Minus, ImagePlus, Undo2, Redo2, Copy, Trash2,
   BringToFront, SendToBack, Download, Send, Eye, EyeOff, Lock, Unlock, AlignHorizontalJustifyCenter, AlignVerticalJustifyCenter,
-  AlignLeft, AlignCenter, AlignRight,
+  AlignLeft, AlignCenter, AlignRight, Star,
 } from 'lucide-react'
 import { Button, ColorInput, Field, NumberInput, Panel, Segmented, Select, Slider } from '../../components/ui'
 import { ALL_FONTS } from './design'
@@ -12,12 +12,14 @@ import { sceneObjects } from './fabricScene'
 import type { Scene } from './scene'
 import type { LoadedSource } from '../../lib/files'
 import { baseName, downloadBlob } from '../../lib/download'
+import { kitLogoFile, type BrandKit } from '../../lib/brand'
+import { loadSource } from '../../lib/files'
 
 type Named = FabricObject & { name?: string }
 const PROPS = ['name', 'selectable', 'evented', 'lockMovementX', 'lockMovementY']
 
-export default function Editor({ scene, title, onBack, onSendToResizer }: {
-  scene: Scene; title: string; onBack: () => void; onSendToResizer: (s: LoadedSource) => void
+export default function Editor({ scene, title, onBack, onSendToResizer, kit }: {
+  scene: Scene; title: string; onBack: () => void; onSendToResizer: (s: LoadedSource) => void; kit?: BrandKit | null
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const elRef = useRef<HTMLCanvasElement>(null)
@@ -124,6 +126,17 @@ export default function Editor({ scene, title, onBack, onSendToResizer }: {
     const s = Math.min((W * 0.6) / img.width, (H * 0.6) / img.height)
     img.set({ left: W * 0.2, top: H * 0.2, scaleX: s, scaleY: s })
     add(img, f.name.replace(/\.[^.]+$/, ''))
+  }
+
+  async function addBrandLogo() {
+    const f = kit && await kitLogoFile(kit)
+    if (!f) return
+    // PDF / AI logos are rendered to a crisp transparent PNG; SVG/PNG are used directly
+    const src = await loadSource(f, { longSide: 1600, transparent: true })
+    const img = await FabricImage.fromURL(src.canvas.toDataURL('image/png'))
+    const s = (W * 0.3) / img.width
+    img.set({ left: W * 0.06, top: H * 0.06, scaleX: s, scaleY: s })
+    add(img, `${kit!.name} logo`)
   }
 
   function remove() {
@@ -252,6 +265,7 @@ export default function Editor({ scene, title, onBack, onSendToResizer }: {
         <Tool icon={CircleIcon} label="Add circle" onClick={addCircle} />
         <Tool icon={Minus} label="Add line" onClick={addLine} />
         <Tool icon={ImagePlus} label="Add image" onClick={() => imgInput.current?.click()} />
+        {kit?.logo && <Tool icon={Star} label={`Add ${kit.name} logo`} onClick={addBrandLogo} />}
         <input ref={imgInput} type="file" accept="image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) addImage(f); e.target.value = '' }} />
         <div className="mx-2 h-5 w-px bg-ink-700" />
         <Tool icon={Undo2} label="Undo (Ctrl+Z)" onClick={undo} disabled={history.current.i <= 0} />
@@ -290,7 +304,10 @@ export default function Editor({ scene, title, onBack, onSendToResizer }: {
                 <Button className="w-full" onClick={() => setProp({ text: t.text.toUpperCase() === t.text ? t.text.toLowerCase() : t.text.toUpperCase() })}>Toggle UPPERCASE</Button>
               </>)}
               {sel.type !== 'image' && sel.type !== 'line' && (
-                <Field label="Fill"><ColorInput value={fill} onChange={(v) => setProp({ fill: v })} /></Field>
+                <Field label="Fill">
+                  <ColorInput value={fill} onChange={(v) => setProp({ fill: v })} />
+                  {kit && <div className="mt-1.5 flex flex-wrap gap-1">{kit.colors.map((c) => <button key={c.hex + c.name} title={c.name} onClick={() => setProp({ fill: c.hex })} className="h-5 w-5 rounded border border-ink-600" style={{ background: c.hex }} />)}</div>}
+                </Field>
               )}
               {(sel.type === 'line' || sel.type === 'rect' || sel.type === 'circle') && (<>
                 <Field label="Stroke"><ColorInput value={stroke} onChange={(v) => setProp({ stroke: v })} /></Field>

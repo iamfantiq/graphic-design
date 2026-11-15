@@ -1,6 +1,9 @@
 import { edgeStats, rgbToHex } from '../../lib/color'
 
-export type FitMode = 'auto' | 'fill' | 'blur' | 'extend' | 'color'
+import type { AiResult, Box } from '../../lib/smart'
+
+export type Placement = 'auto' | 'smart' | 'fit' | 'fill' | 'recompose'
+export type Fill = 'auto' | 'color' | 'extend' | 'blur'
 
 export interface FormatSpec {
   id: string
@@ -27,37 +30,54 @@ export const FORMATS: FormatSpec[] = [
 export const DEFAULT_FORMATS = ['square', 'portrait', 'story', 'landscape']
 
 export interface Adjust {
-  mode: FitMode
-  zoom: number // 1 = fit (or cover for fill)
+  placement: Placement
+  fill: Fill
+  zoom: number // multiplies the computed scale
   ox: number // -1..1
   oy: number // -1..1
-  padding: number // 0..0.3 fraction of the shorter side (non-fill modes)
+  padding: number // 0..0.25 extra margin (fit / smart)
   bg: string | null // null = automatic
-  blur: number // 4..60 strength for blur mode
-  dim: number // 0..0.6 darkening of blurred background
+  blur: number
+  dim: number
 }
 
-export const DEFAULT_ADJUST: Adjust = { mode: 'auto', zoom: 1, ox: 0, oy: 0, padding: 0, bg: null, blur: 24, dim: 0.15 }
+export const DEFAULT_ADJUST: Adjust = { placement: 'auto', fill: 'auto', zoom: 1, ox: 0, oy: 0, padding: 0, bg: null, blur: 24, dim: 0.15 }
 
 export interface SourceInfo {
   canvas: HTMLCanvasElement
   edgeHex: string
   edgeVariance: number
+  /** on-device content box (fractions) */
+  keep: Box
 }
 
-export function analyse(canvas: HTMLCanvasElement): SourceInfo {
+export function analyse(canvas: HTMLCanvasElement, keep: Box): SourceInfo {
   const { color, variance } = edgeStats(canvas)
-  return { canvas, edgeHex: rgbToHex(color), edgeVariance: variance }
+  return { canvas, edgeHex: rgbToHex(color), edgeVariance: variance, keep }
 }
 
-export function resolveMode(src: SourceInfo, fmt: FormatSpec, adj: Adjust): Exclude<FitMode, 'auto'> {
-  if (adj.mode !== 'auto') return adj.mode
+export function resolvePlacement(src: SourceInfo, fmt: FormatSpec, adj: Adjust, ai?: AiResult | null): Exclude<Placement, 'auto'> {
+  if (adj.placement !== 'auto') {
+    if (adj.placement === 'recompose' && !aiFormat(ai, fmt)?.placements.length) return 'smart'
+    return adj.placement
+  }
+  const f = aiFormat(ai, fmt)
+  if (f) return f.strategy === 'crop' ? 'smart' : f.strategy === 'recompose' && f.placements.length ? 'recompose' : f.strategy === 'fit' ? 'fit' : 'smart'
   const ratio = Math.abs(Math.log((src.canvas.width / src.canvas.height) / (fmt.w / fmt.h)))
   if (ratio < 0.06) return 'fill' // nearly the same shape: a tiny crop is safe
-  if (src.edgeVariance < 14) return 'color' // flat background: extend with the poster's own colour
+  return 'smart'
+}
+
+export function resolveFill(src: SourceInfo, fmt: FormatSpec, adj: Adjust, ai?: AiResult | null): Exclude<Fill, 'auto'> {
+  if (adj.fill !== 'auto') return adj.fill
+  const f = aiFormat(ai, fmt)
+  if (f) return f.fill
+  if (src.edgeVariance < 14) return 'color'
   if (src.edgeVariance < 40) return 'extend'
   return 'blur'
 }
+
+const aiFormat = (ai: AiResult | null | undefined, fmt: FormatSpec) => ai?.analysis.formats.find((f) => f.id === fmt.id)
 
 function softBlur(img: CanvasImageSource, w: number, h: number, strength: number) {
   // Downscale/upscale blur works in every browser (ctx.filter is not supported in older Safari).
@@ -76,37 +96,18 @@ function softBlur(img: CanvasImageSource, w: number, h: number, strength: number
   return mid
 }
 
-export function renderFormat(src: SourceInfo, fmt: FormatSpec, adj: Adjust, out: HTMLCanvasElement, scale = 1) {
-  const W = Math.round(fmt.w * scale), H = Math.round(fmt.h * scale)
-  out.width = W; out.height = H
-  const ctx = out.getContext('2d')!
-  ctx.imageSmoothingEnabled = true
-  ctx.imageSmoothingQuality = 'high'
-  const img = src.canvas
+function drawFill(ctx: CanvasRenderingContext2D, img: HTMLCanvasElement, fill: Exclude<Fill, 'auto'>, adj: Adjust, bg: string, W: number, H: number,
+  rect: { x: number; y: number; dw: number; dh: number } | null) {
   const sw = img.width, sh = img.height
-  const mode = resolveMode(src, fmt, adj)
-  const bg = adj.bg ?? src.edgeHex
-
-  const fit = Math.min(W / sw, H / sh)
-  const cover = Math.max(W / sw, H / sh)
-  const pad = mode === 'fill' ? 0 : adj.padding
-  const s = mode === 'fill' ? cover * adj.zoom : fit * adj.zoom * (1 - 2 * pad)
-  const dw = sw * s, dh = sh * s
-  const freeX = W - dw, freeY = H - dh
-  const x = freeX / 2 + (adj.ox * Math.abs(freeX)) / 2
-  const y = freeY / 2 + (adj.oy * Math.abs(freeY)) / 2
-
   ctx.fillStyle = bg
   ctx.fillRect(0, 0, W, H)
-
-  if (mode === 'blur') {
-    const cs = cover * 1.08
+  if (fill === 'blur' || (fill === 'extend' && !rect)) {
+    const cs = Math.max(W / sw, H / sh) * 1.08
     const bw = sw * cs, bh = sh * cs
-    const blurred = softBlur(img, bw, bh, adj.blur)
-    ctx.drawImage(blurred, (W - bw) / 2, (H - bh) / 2, bw, bh)
-    if (adj.dim > 0) { ctx.fillStyle = `rgba(0,0,0,${adj.dim})`; ctx.fillRect(0, 0, W, H) }
-  } else if (mode === 'extend') {
-    // Stretch the outermost pixels of the artwork into the empty space, then soften.
+    ctx.drawImage(softBlur(img, bw, bh, fill === 'blur' ? adj.blur : 40), (W - bw) / 2, (H - bh) / 2, bw, bh)
+    if (adj.dim > 0 && fill === 'blur') { ctx.fillStyle = `rgba(0,0,0,${adj.dim})`; ctx.fillRect(0, 0, W, H) }
+  } else if (fill === 'extend' && rect) {
+    const { x, y, dw, dh } = rect
     const layer = document.createElement('canvas')
     layer.width = W; layer.height = H
     const l = layer.getContext('2d')!
@@ -116,7 +117,6 @@ export function renderFormat(src: SourceInfo, fmt: FormatSpec, adj: Adjust, out:
     if (x + dw < W) l.drawImage(img, sw - e, 0, e, sh, x + dw - 1, y, W - x - dw + 1, dh)
     if (y > 0) l.drawImage(img, 0, 0, sw, e, x, 0, dw, y + 1)
     if (y + dh < H) l.drawImage(img, 0, sh - e, sw, e, x, y + dh - 1, dw, H - y - dh + 1)
-    // corners
     const corner = (sx: number, sy: number, dx: number, dy: number, w: number, h: number) => { if (w > 0 && h > 0) l.drawImage(img, sx, sy, e, e, dx, dy, w, h) }
     corner(0, 0, 0, 0, x, y)
     corner(sw - e, 0, x + dw, 0, W - x - dw, y)
@@ -124,17 +124,101 @@ export function renderFormat(src: SourceInfo, fmt: FormatSpec, adj: Adjust, out:
     corner(sw - e, sh - e, x + dw, y + dh, W - x - dw, H - y - dh)
     ctx.drawImage(softBlur(layer, W, H, 10), 0, 0, W, H)
   }
+}
 
-  if (mode !== 'fill' && adj.padding > 0 && mode !== 'color') {
-    // subtle shadow so a padded poster reads as an object
+/** Cut a region out with softly feathered edges, so it blends into gradient backgrounds. */
+function featheredCut(img: HTMLCanvasElement, b: Box, feather: number) {
+  const sx = b.x0 * img.width, sy = b.y0 * img.height
+  const w = Math.max(1, (b.x1 - b.x0) * img.width), h = Math.max(1, (b.y1 - b.y0) * img.height)
+  const c = document.createElement('canvas')
+  c.width = Math.round(w); c.height = Math.round(h)
+  const x = c.getContext('2d')!
+  x.drawImage(img, sx, sy, w, h, 0, 0, c.width, c.height)
+  if (feather > 0) {
+    const f = Math.max(1, Math.min(c.width, c.height) * feather)
+    x.globalCompositeOperation = 'destination-in'
+    const gx = x.createLinearGradient(0, 0, c.width, 0)
+    gx.addColorStop(0, 'rgba(0,0,0,0)'); gx.addColorStop(f / c.width, '#000'); gx.addColorStop(1 - f / c.width, '#000'); gx.addColorStop(1, 'rgba(0,0,0,0)')
+    x.fillStyle = gx; x.fillRect(0, 0, c.width, c.height)
+    const gy = x.createLinearGradient(0, 0, 0, c.height)
+    gy.addColorStop(0, 'rgba(0,0,0,0)'); gy.addColorStop(f / c.height, '#000'); gy.addColorStop(1 - f / c.height, '#000'); gy.addColorStop(1, 'rgba(0,0,0,0)')
+    x.fillStyle = gy; x.fillRect(0, 0, c.width, c.height)
+  }
+  return c
+}
+
+export interface RenderResult { placement: Exclude<Placement, 'auto'>; fill: Exclude<Fill, 'auto'> }
+
+export function renderFormat(src: SourceInfo, fmt: FormatSpec, adj: Adjust, out: HTMLCanvasElement, scale = 1, ai?: AiResult | null): RenderResult {
+  const W = Math.round(fmt.w * scale), H = Math.round(fmt.h * scale)
+  out.width = W; out.height = H
+  const ctx = out.getContext('2d')!
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'high'
+  const img = src.canvas
+  const sw = img.width, sh = img.height
+  const placement = resolvePlacement(src, fmt, adj, ai)
+  const fill = resolveFill(src, fmt, adj, ai)
+  const bg = adj.bg ?? (ai?.analysis.background_color?.match(/^#[0-9a-f]{6}$/i) ? ai.analysis.background_color : src.edgeHex)
+
+  if (placement === 'recompose') {
+    drawFill(ctx, img, fill === 'extend' ? 'blur' : fill, { ...adj, dim: fill === 'blur' ? adj.dim : 0 }, bg, W, H, null)
+    const f = aiFormat(ai, fmt)!
+    const feather = ai!.analysis.background === 'flat' ? 0 : 0.06
+    for (const p of f.placements) {
+      const el = ai!.elements[p.element]
+      if (!el) continue
+      const cut = featheredCut(img, el.box, feather)
+      const tx0 = Math.min(p.box.x0, p.box.x1) * W, ty0 = Math.min(p.box.y0, p.box.y1) * H
+      const tw = Math.abs(p.box.x1 - p.box.x0) * W, th = Math.abs(p.box.y1 - p.box.y0) * H
+      const s = Math.min(tw / cut.width, th / cut.height) * adj.zoom
+      const dw = cut.width * s, dh = cut.height * s
+      ctx.drawImage(cut, tx0 + (tw - dw) / 2 + adj.ox * W * 0.1, ty0 + (th - dh) / 2 + adj.oy * H * 0.1, dw, dh)
+    }
+    return { placement, fill }
+  }
+
+  const fit = Math.min(W / sw, H / sh)
+  const cover = Math.max(W / sw, H / sh)
+  let s: number, x: number, y: number
+  if (placement === 'fill') {
+    s = cover * adj.zoom
+    const freeX = W - sw * s, freeY = H - sh * s
+    x = freeX / 2 + (adj.ox * Math.abs(freeX)) / 2
+    y = freeY / 2 + (adj.oy * Math.abs(freeY)) / 2
+  } else if (placement === 'fit') {
+    s = fit * adj.zoom * (1 - 2 * adj.padding)
+    const freeX = W - sw * s, freeY = H - sh * s
+    x = freeX / 2 + (adj.ox * Math.abs(freeX)) / 2
+    y = freeY / 2 + (adj.oy * Math.abs(freeY)) / 2
+  } else {
+    // smart: keep the important region fully visible, as large as possible, crop the rest
+    const k = ai?.keep ?? src.keep
+    const kx = k.x0 * sw, ky = k.y0 * sh, kw = Math.max(1, (k.x1 - k.x0) * sw), kh = Math.max(1, (k.y1 - k.y0) * sh)
+    const m = Math.min(W, H) * (0.04 + adj.padding)
+    const safeT = fmt.safe ? (fmt.safe.top / fmt.h) * H : 0, safeB = fmt.safe ? (fmt.safe.bottom / fmt.h) * H : 0
+    const top = Math.max(m, safeT), bottom = Math.max(m, safeB)
+    const availW = W - 2 * m, availH = H - top - bottom
+    s = Math.min(availW / kw, availH / kh, cover) * adj.zoom
+    s = Math.max(s, fit * 0.5)
+    const dw = sw * s, dh = sh * s
+    x = m + availW / 2 - (kx + kw / 2) * s
+    y = top + availH / 2 - (ky + kh / 2) * s
+    // avoid empty gaps when the image is big enough to cover that side
+    x = dw >= W ? Math.min(0, Math.max(W - dw, x)) : Math.max(0, Math.min(W - dw, x))
+    y = dh >= H ? Math.min(0, Math.max(H - dh, y)) : Math.max(0, Math.min(H - dh, y))
+    x += adj.ox * W * 0.25
+    y += adj.oy * H * 0.25
+  }
+  const dw = sw * s, dh = sh * s
+  const covers = x <= 0.5 && y <= 0.5 && x + dw >= W - 0.5 && y + dh >= H - 0.5
+  if (!covers) drawFill(ctx, img, fill, adj, bg, W, H, { x, y, dw, dh })
+  if (!covers && adj.padding > 0 && fill !== 'color') {
     ctx.save()
-    ctx.shadowColor = 'rgba(0,0,0,0.35)'
-    ctx.shadowBlur = 40 * scale
-    ctx.shadowOffsetY = 12 * scale
-    ctx.fillStyle = '#000'
-    ctx.fillRect(x, y, dw, dh)
+    ctx.shadowColor = 'rgba(0,0,0,0.35)'; ctx.shadowBlur = 40 * scale; ctx.shadowOffsetY = 12 * scale
+    ctx.fillStyle = '#000'; ctx.fillRect(x, y, dw, dh)
     ctx.restore()
   }
   ctx.drawImage(img, x, y, dw, dh)
-  return mode
+  return { placement, fill }
 }

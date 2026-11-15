@@ -7,6 +7,16 @@ import { hexToRgb, rgbToCmyk } from '../../lib/color'
 import { DEFAULT_TRACE, isVectorFile, loadVectorLogo, traceRaster, type Logo, type TraceOptions } from './logo'
 import { buildBannerPdf, DEFAULT_CONFIG, geometry, pdfScale, type BannerConfig, type Layout } from './buildPdf'
 import { FONTS, type FontKey } from './fonts'
+import { kitLogoFile, useBrandKits, type BrandKit } from '../../lib/brand'
+
+function KitSwatches({ kit, onPick }: { kit: BrandKit | null; onPick: (hex: string) => void }) {
+  if (!kit) return null
+  return (
+    <div className="mt-1.5 flex flex-wrap gap-1">
+      {kit.colors.map((c) => <button key={c.hex + c.name} title={`${kit.name}: ${c.name}`} onClick={() => onPick(c.hex)} className="h-5 w-5 rounded border border-ink-600" style={{ background: c.hex }} />)}
+    </div>
+  )
+}
 
 const PRESETS: { id: string; label: string; w: number; h: number }[] = [
   { id: '3000x1000', label: 'Banner 3 × 1 m', w: 3000, h: 1000 },
@@ -57,6 +67,13 @@ export default function Banner() {
   const canvasHost = useRef<HTMLDivElement>(null)
   const pdfRef = useRef<Uint8Array | null>(null)
   const set = (p: Partial<BannerConfig>) => setCfg((c) => ({ ...c, ...p }))
+  const { active: kit } = useBrandKits()
+  // official CMYK values from the active brand kit win over the automatic conversion
+  useEffect(() => {
+    if (!kit) return
+    const o = Object.fromEntries(kit.colors.filter((c) => c.cmyk).map((c) => [c.hex, c.cmyk!]))
+    if (Object.keys(o).length) setCfg((c) => ({ ...c, cmykOverrides: { ...c.cmykOverrides, ...o } }))
+  }, [kit])
 
   async function openLogo(f: File, opt = trace) {
     setError(null)
@@ -132,6 +149,9 @@ export default function Banner() {
           ) : null}
           <Dropzone compact={!!logo} accept=".svg,.pdf,.ai,.png,.jpg,.jpeg,.webp,image/*,application/pdf" onFiles={(f) => openLogo(f[0])}
             title={logo ? 'Replace logo' : 'Drop your logo'} subtitle={logo ? undefined : 'SVG · PDF · AI stay vector. PNG/JPG get traced.'} />
+          {kit?.logo && (
+            <Button className="w-full" onClick={async () => { const f = await kitLogoFile(kit); if (f) openLogo(f) }}>Use logo from “{kit.name}”</Button>
+          )}
           {busy && <Spinner label={busy} />}
           {error && <p className="rounded border border-red-900 bg-red-950/40 p-2 text-xs text-red-300">{error}</p>}
         </Panel>
@@ -165,6 +185,7 @@ export default function Banner() {
               return (
                 <div key={color}>
                   <ColorInput value={cur} onChange={(v) => set({ logoColorMap: { ...cfg.logoColorMap, [color]: v } })} />
+                  <KitSwatches kit={kit} onPick={(v) => set({ logoColorMap: { ...cfg.logoColorMap, [color]: v } })} />
                   <CmykFields hex={cur} cfg={cfg} set={set} />
                 </div>
               )
@@ -228,6 +249,7 @@ export default function Banner() {
             options={[{ value: 'cmyk', label: 'CMYK (print)' }, { value: 'rgb', label: 'RGB' }]} />
           <Field label="Background">
             <ColorInput value={cfg.bg} onChange={(v) => set({ bg: v })} />
+            <KitSwatches kit={kit} onPick={(v) => set({ bg: v })} />
             <CmykFields hex={cfg.bg} cfg={cfg} set={set} />
           </Field>
           {cfg.colorMode === 'cmyk' && <p className="text-xs text-ink-400">CMYK values are converted from RGB as a starting point — type your brand’s exact CMYK from the guideline. For rich black use e.g. 60/40/40/100.</p>}
@@ -262,6 +284,7 @@ export default function Banner() {
               <Toggle checked={cfg.uppercase} onChange={(v) => set({ uppercase: v })} label="Uppercase" />
               <Field label="Text colour">
                 <ColorInput value={cfg.textColor} onChange={(v) => set({ textColor: v })} />
+                <KitSwatches kit={kit} onPick={(v) => set({ textColor: v })} />
                 <CmykFields hex={cfg.textColor} cfg={cfg} set={set} />
               </Field>
             </>)}

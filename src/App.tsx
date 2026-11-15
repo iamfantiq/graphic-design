@@ -1,21 +1,25 @@
 import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react'
-import { LayoutGrid, Maximize2, Printer, Home as HomeIcon, ArrowRight } from 'lucide-react'
+import { LayoutGrid, Maximize2, Printer, Home as HomeIcon, ArrowRight, ShieldCheck, Palette, FileCode2 } from 'lucide-react'
 import { Spinner } from './components/ui'
 const Resizer = lazy(() => import('./tools/resizer/Resizer'))
 const Banner = lazy(() => import('./tools/banner/Banner'))
 const LayoutLab = lazy(() => import('./tools/layout/LayoutLab'))
+const Preflight = lazy(() => import('./tools/preflight/Preflight'))
+const BrandKit = lazy(() => import('./tools/brand/BrandKit'))
 import type { LoadedSource } from './lib/files'
 
-type Tool = 'home' | 'resize' | 'banner' | 'layouts'
+type Tool = 'home' | 'resize' | 'banner' | 'layouts' | 'check' | 'brand'
 const TOOLS: { id: Exclude<Tool, 'home'>; label: string; icon: typeof HomeIcon; blurb: string }[] = [
   { id: 'resize', label: 'Social Resizer', icon: Maximize2, blurb: 'One poster in — 1:1, 4:5, 9:16, 16:9 and more out. Works with .ai, PDF, SVG, PNG, JPG.' },
   { id: 'banner', label: 'Logo → Print Banner', icon: Printer, blurb: 'Turn any logo into a clean vector PDF for large-format print: 3×1 m banners, roll-ups, press walls.' },
   { id: 'layouts', label: 'Layout Lab', icon: LayoutGrid, blurb: 'Grid-based poster ideas driven by your references, with a full editor built in.' },
+  { id: 'check', label: 'Print Check', icon: ShieldCheck, blurb: 'Preflight before you send: real-size resolution, bleed, fonts, RGB/CMYK, hairlines, text near the edge.' },
+  { id: 'brand', label: 'Brand Kits', icon: Palette, blurb: 'Each client’s logo, colours with official CMYK, and fonts — used by every tool.' },
 ]
 
 const readHash = (): Tool => {
   const h = window.location.hash.replace('#/', '') as Tool
-  return ['resize', 'banner', 'layouts'].includes(h) ? h : 'home'
+  return ['resize', 'banner', 'layouts', 'check', 'brand'].includes(h) ? h : 'home'
 }
 
 function Home({ go }: { go: (t: Tool) => void }) {
@@ -24,7 +28,7 @@ function Home({ go }: { go: (t: Tool) => void }) {
       <div className="mb-3 font-mono text-xs uppercase tracking-[0.2em] text-acid">Design production toolkit</div>
       <h1 className="mb-4 max-w-3xl text-5xl font-semibold leading-[1.05] tracking-tight">Design once.<br />Ship every format.</h1>
       <p className="mb-12 max-w-2xl text-lg text-ink-300">The boring production work after the creative part — resizing for every platform, building print files, exploring layouts — done in seconds, right in your browser. Files never leave your computer.</p>
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {TOOLS.map((t) => (
           <button key={t.id} onClick={() => go(t.id)} className="group flex flex-col rounded-xl border border-ink-800 bg-ink-900 p-6 text-left transition hover:border-acid/60 hover:bg-ink-850">
             <t.icon className="mb-6 h-6 w-6 text-acid" />
@@ -34,10 +38,18 @@ function Home({ go }: { go: (t: Tool) => void }) {
           </button>
         ))}
       </div>
+      <a href="/scripts/Formatter-Artboards.jsx" download className="mt-4 flex items-center gap-4 rounded-xl border border-dashed border-ink-700 p-5 transition hover:border-acid/60">
+        <FileCode2 className="h-6 w-6 shrink-0 text-acid" />
+        <div className="flex-1">
+          <div className="font-semibold">Illustrator script: social artboards <span className="ml-1 rounded bg-amber-400/15 px-1.5 py-0.5 text-[11px] font-normal text-amber-300">beta · try on a copy first</span></div>
+          <p className="text-sm text-ink-400">Run inside Illustrator: adds 1:1, 4:5, 9:16, 16:9 artboards next to your poster with the artwork copied in as editable vectors, one group per layer. File → Scripts → Other Script…</p>
+        </div>
+        <span className="text-sm text-ink-300">Download .jsx</span>
+      </a>
       <div className="mt-14 grid gap-8 border-t border-ink-800 pt-10 text-sm text-ink-400 md:grid-cols-3">
-        <div><div className="mb-1 font-medium text-ink-100">Private by design</div>Everything runs locally in the browser — no uploads, no accounts, works on client NDAs.</div>
+        <div><div className="mb-1 font-medium text-ink-100">Private by default</div>Everything runs in the browser. Only the optional AI layout sends a downscaled preview to the AI — and only when you click it.</div>
         <div><div className="mb-1 font-medium text-ink-100">Print-ready output</div>Vector PDFs with bleed, crop marks, TrimBox/BleedBox, CMYK colour and outlined text.</div>
-        <div><div className="mb-1 font-medium text-ink-100">No AI slop</div>Layouts are composed from grid systems and poster traditions, then you edit every detail.</div>
+        <div><div className="mb-1 font-medium text-ink-100">AI where it helps</div>Claude reads a poster like a designer to decide what can be cropped — layouts themselves come from grid systems, not generators.</div>
       </div>
     </div>
   )
@@ -79,6 +91,8 @@ export default function App() {
         {tool === 'home' && <div className="h-full overflow-y-auto"><Home go={go} /></div>}
         {keep('resize', <Resizer handoff={handoff} />)}
         {keep('banner', <Banner />)}
+        {keep('check', <Preflight />)}
+        {keep('brand', <BrandKit />)}
         {keep('layouts', <LayoutLab onSendToResizer={(s) => { setHandoff(s); go('resize') }} />)}
       </div>
     </div>

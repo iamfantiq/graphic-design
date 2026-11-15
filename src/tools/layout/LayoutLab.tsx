@@ -9,6 +9,8 @@ import { ARCHETYPES, generate, type GenImage, type Idea } from './generator'
 import { renderScene } from './fabricScene'
 import type { Scene } from './scene'
 import Editor from './Editor'
+import { kitPalette, useBrandKits } from '../../lib/brand'
+import { ALL_FONTS } from './design'
 import type { LoadedSource } from '../../lib/files'
 
 function paletteFromImage(img: HTMLImageElement, name: string): Palette | null {
@@ -49,7 +51,16 @@ export default function LayoutLab({ onSendToResizer }: { onSendToResizer: (s: Lo
     Promise.all(FONT_PAIRS.map(ensureFonts)).then(() => document.fonts.ready).then(() => setReady(true))
   }, [])
 
-  const pool = useMemo(() => [...refs.map((r) => r.palette).filter(Boolean) as Palette[], ...PALETTES], [refs])
+  const { active: kit } = useBrandKits()
+  const brandPalette = useMemo(() => (kit ? kitPalette(kit) : null), [kit])
+  const brandFonts = useMemo<FontPair | null>(() => {
+    if (!kit) return null
+    const w = (f: string) => Math.max(...(ALL_FONTS.find(([n]) => n === f)?.[1] ?? [700]))
+    return { name: `Brand: ${kit.name}`, display: kit.fonts.display, dw: w(kit.fonts.display), text: kit.fonts.text, tw: 400, upper: false }
+  }, [kit])
+  const fontPool = useMemo(() => (brandFonts ? [brandFonts, ...FONT_PAIRS] : FONT_PAIRS), [brandFonts])
+  useEffect(() => { if (brandFonts) ensureFonts(brandFonts) }, [brandFonts])
+  const pool = useMemo(() => [...(brandPalette ? [brandPalette] : []), ...refs.map((r) => r.palette).filter(Boolean) as Palette[], ...PALETTES], [refs, brandPalette])
 
   function roll() {
     const order = shuffle(ARCHETYPES.map((a) => a.id))
@@ -57,8 +68,8 @@ export default function LayoutLab({ onSendToResizer }: { onSendToResizer: (s: Lo
     setIdeas(order.map((archetype) => ({
       archetype, seed: rand(),
       // if there are references, lean on them: research-driven palettes first
-      palette: lockPalette ? palette : refPalettes.length && Math.random() < 0.6 ? refPalettes[Math.floor(Math.random() * refPalettes.length)] : pool[Math.floor(Math.random() * pool.length)],
-      fonts: lockFonts ? fonts : FONT_PAIRS[Math.floor(Math.random() * FONT_PAIRS.length)],
+      palette: lockPalette ? palette : brandPalette && Math.random() < 0.5 ? brandPalette : refPalettes.length && Math.random() < 0.6 ? refPalettes[Math.floor(Math.random() * refPalettes.length)] : pool[Math.floor(Math.random() * pool.length)],
+      fonts: lockFonts ? fonts : brandFonts && Math.random() < 0.5 ? brandFonts : FONT_PAIRS[Math.floor(Math.random() * FONT_PAIRS.length)],
     })))
   }
 
@@ -113,7 +124,7 @@ export default function LayoutLab({ onSendToResizer }: { onSendToResizer: (s: Lo
   }
 
   if (editing) {
-    return <Editor scene={editing.scene} title={ARCHETYPES.find((a) => a.id === editing.idea.archetype)?.name ?? 'Design'}
+    return <Editor scene={editing.scene} kit={kit} title={ARCHETYPES.find((a) => a.id === editing.idea.archetype)?.name ?? 'Design'}
       onBack={() => setEditing(null)} onSendToResizer={onSendToResizer} />
   }
 
@@ -159,8 +170,8 @@ export default function LayoutLab({ onSendToResizer }: { onSendToResizer: (s: Lo
             {lockPalette ? `Palette locked: ${palette.name}` : 'Palette: explore'}
           </button>
           <Field label="Type pairing">
-            <Select value={fonts.name} onChange={(v) => { setFonts(FONT_PAIRS.find((f) => f.name === v)!); setLockFonts(true) }}
-              options={FONT_PAIRS.map((f) => ({ value: f.name, label: `${f.name} — ${f.display} / ${f.text}` }))} />
+            <Select value={fonts.name} onChange={(v) => { setFonts(fontPool.find((f) => f.name === v)!); setLockFonts(true) }}
+              options={fontPool.map((f) => ({ value: f.name, label: `${f.name} — ${f.display} / ${f.text}` }))} />
           </Field>
           <button onClick={() => setLockFonts(!lockFonts)} className="flex items-center gap-1.5 text-xs text-ink-300 hover:text-ink-100">
             {lockFonts ? <Lock className="h-3.5 w-3.5 text-acid" /> : <Unlock className="h-3.5 w-3.5" />}
