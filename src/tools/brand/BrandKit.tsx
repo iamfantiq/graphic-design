@@ -35,8 +35,8 @@ export default function BrandKit() {
   }
 
   return (
-    <div className="flex h-full min-h-0">
-      <aside className="w-72 shrink-0 overflow-y-auto border-r border-ink-800 bg-ink-900">
+    <div className="flex min-h-0 flex-col md:h-full md:flex-row">
+      <aside className="w-full shrink-0 border-b border-ink-800 bg-ink-900 md:w-72 md:overflow-y-auto md:border-b-0 md:border-r">
         <Panel title="Brand kits" right={<Button variant="ghost" className="!px-2 !py-1 text-xs" onClick={() => { const k = blank(); save([...kits, k]); setSelId(k.id); if (!active) setActiveKit(k.id) }}><Plus className="h-3.5 w-3.5" />New</Button>}>
           {!kits.length && <p className="text-sm text-ink-400">Save a client’s logo, colours (with exact CMYK) and fonts once — every tool can then use them.</p>}
           {kits.map((k) => (
@@ -50,7 +50,7 @@ export default function BrandKit() {
           <p className="text-xs text-ink-400">Kits are stored in this browser only.</p>
         </Panel>
       </aside>
-      <main className="min-w-0 flex-1 overflow-y-auto">
+      <main className="min-w-0 flex-1 md:overflow-y-auto">
         {!kit ? (
           <div className="mx-auto max-w-xl px-6 py-16">
             <h1 className="mb-2 text-3xl font-semibold tracking-tight">Brand Kits</h1>
@@ -58,7 +58,7 @@ export default function BrandKit() {
             <Button variant="primary" onClick={() => { const k = blank(); save([...kits, k]); setSelId(k.id); setActiveKit(k.id) }}><Plus className="h-4 w-4" />Create a brand kit</Button>
           </div>
         ) : (
-          <div className="mx-auto grid max-w-4xl gap-6 p-6 md:grid-cols-2">
+          <div className="mx-auto grid max-w-4xl gap-6 p-4 md:p-6 lg:grid-cols-2">
             <div className="space-y-4">
               <Field label="Name"><TextInput value={kit.name} onChange={(e) => update({ name: e.target.value })} /></Field>
               <div className="flex gap-2">

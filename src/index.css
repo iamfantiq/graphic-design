@@ -42,3 +42,8 @@ input[type="checkbox"] { accent-color: var(--color-acid); }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: #2a2a31; border-radius: 10px; border: 2px solid transparent; background-clip: padding-box; }
 ::-webkit-scrollbar-track { background: transparent; }
+
+/* Phones: 16px form text stops iOS from zooming into inputs on focus */
+@media (max-width: 767px) {
+  input, select, textarea { font-size: 16px !important; }
+}

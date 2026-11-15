@@ -41,8 +41,8 @@ export default function Preflight() {
   const verdict = report ? (report.findings.some((f) => f.level === 'fail') ? 'fail' : report.findings.some((f) => f.level === 'warn') ? 'warn' : 'pass') : null
 
   return (
-    <div className="flex h-full min-h-0">
-      <aside className="w-80 shrink-0 overflow-y-auto border-r border-ink-800 bg-ink-900">
+    <div className="flex min-h-0 flex-col md:h-full md:flex-row">
+      <aside className="w-full shrink-0 border-b border-ink-800 bg-ink-900 md:w-80 md:overflow-y-auto md:border-b-0 md:border-r">
         <Panel title="File">
           <Dropzone compact={!!file} accept=".pdf,.ai,.png,.jpg,.jpeg,.webp,.tif,image/*,application/pdf" onFiles={(f) => { setFile(f[0]); run(f[0]) }}
             title={file ? `Replace — ${file.name}` : 'Drop a print file'} subtitle={file ? undefined : 'PDF · AI · PNG · JPG'} />
@@ -62,7 +62,7 @@ export default function Preflight() {
         </Panel>
       </aside>
 
-      <main className="min-w-0 flex-1 overflow-y-auto">
+      <main className="min-w-0 flex-1 md:overflow-y-auto">
         {!report && !busy && (
           <div className="mx-auto max-w-xl px-6 py-16">
             <h1 className="mb-2 text-3xl font-semibold tracking-tight">Print Check</h1>
@@ -73,8 +73,8 @@ export default function Preflight() {
         )}
         {busy && <div className="p-8"><Spinner label="Inspecting file…" /></div>}
         {report && !busy && (
-          <div className="grid gap-6 p-6 xl:grid-cols-[minmax(0,1fr)_420px]">
-            <div className="checker relative flex items-start justify-center overflow-hidden rounded-xl p-6">
+          <div className="grid gap-6 p-4 md:p-6 xl:grid-cols-[minmax(0,1fr)_420px]">
+            <div className="checker relative flex items-start justify-center overflow-hidden rounded-xl p-3 md:p-6">
               <div className="relative max-h-[78vh]" style={{ aspectRatio: `${report.preview.width}/${report.preview.height}`, width: '100%', maxWidth: `calc(78vh * ${report.preview.width / report.preview.height})` }}>
                 <img src={report.preview.toDataURL('image/jpeg', 0.85)} className="block h-full w-full shadow-2xl" />
                 {overlay && report.trim && <div className="pointer-events-none absolute outline outline-1 outline-fuchsia-500" style={{ left: `${report.trim.x0 * 100}%`, top: `${report.trim.y0 * 100}%`, width: `${(report.trim.x1 - report.trim.x0) * 100}%`, height: `${(report.trim.y1 - report.trim.y0) * 100}%` }} />}

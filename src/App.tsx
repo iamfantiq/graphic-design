@@ -24,10 +24,10 @@ const readHash = (): Tool => {
 
 function Home({ go }: { go: (t: Tool) => void }) {
   return (
-    <div className="mx-auto max-w-5xl px-8 py-16">
+    <div className="mx-auto max-w-5xl px-5 py-10 md:px-8 md:py-16">
       <div className="mb-3 font-mono text-xs uppercase tracking-[0.2em] text-acid">Design production toolkit</div>
-      <h1 className="mb-4 max-w-3xl text-5xl font-semibold leading-[1.05] tracking-tight">Design once.<br />Ship every format.</h1>
-      <p className="mb-12 max-w-2xl text-lg text-ink-300">The boring production work after the creative part — resizing for every platform, building print files, exploring layouts — done in seconds, right in your browser. Files never leave your computer.</p>
+      <h1 className="mb-4 max-w-3xl text-4xl font-semibold leading-[1.05] tracking-tight md:text-5xl">Design once.<br />Ship every format.</h1>
+      <p className="mb-10 max-w-2xl text-base text-ink-300 md:mb-12 md:text-lg">The boring production work after the creative part — resizing for every platform, building print files, exploring layouts — done in seconds, right in your browser. Files never leave your computer.</p>
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {TOOLS.map((t) => (
           <button key={t.id} onClick={() => go(t.id)} className="group flex flex-col rounded-xl border border-ink-800 bg-ink-900 p-6 text-left transition hover:border-acid/60 hover:bg-ink-850">
@@ -38,9 +38,9 @@ function Home({ go }: { go: (t: Tool) => void }) {
           </button>
         ))}
       </div>
-      <a href="/scripts/Formatter-Artboards.jsx" download className="mt-4 flex items-center gap-4 rounded-xl border border-dashed border-ink-700 p-5 transition hover:border-acid/60">
+      <a href="/scripts/Formatter-Artboards.jsx" download className="mt-4 flex flex-wrap items-center gap-4 rounded-xl border border-dashed border-ink-700 p-5 transition hover:border-acid/60">
         <FileCode2 className="h-6 w-6 shrink-0 text-acid" />
-        <div className="flex-1">
+        <div className="min-w-[220px] flex-1">
           <div className="font-semibold">Illustrator script: social artboards <span className="ml-1 rounded bg-amber-400/15 px-1.5 py-0.5 text-[11px] font-normal text-amber-300">beta · try on a copy first</span></div>
           <p className="text-sm text-ink-400">Run inside Illustrator: adds 1:1, 4:5, 9:16, 16:9 artboards next to your poster with the artwork copied in as editable vectors, one group per layer. File → Scripts → Other Script…</p>
         </div>
@@ -69,15 +69,15 @@ export default function App() {
 
   // Keep visited tools mounted so work isn't lost when switching tabs.
   const keep = (t: Tool, node: ReactNode) => visited.has(t) && (
-    <div className={tool === t ? 'h-full' : 'hidden'}>
+    <div className={tool === t ? 'md:h-full' : 'hidden'}>
       <Suspense fallback={<div className="p-8"><Spinner label="Loading tool…" /></div>}>{node}</Suspense>
     </div>
   )
 
   return (
     <div className="flex h-full">
-      <nav className="flex w-14 shrink-0 flex-col items-center gap-1 border-r border-ink-800 bg-ink-950 py-3">
-        <button onClick={() => go('home')} title="Home" className="mb-3">
+      <nav className="fixed inset-x-0 bottom-0 z-50 flex items-center justify-around border-t border-ink-800 bg-ink-950/95 px-1 pb-[env(safe-area-inset-bottom)] backdrop-blur md:static md:w-14 md:shrink-0 md:flex-col md:justify-start md:gap-1 md:border-r md:border-t-0 md:bg-ink-950 md:px-0 md:py-3 md:pb-3">
+        <button onClick={() => go('home')} title="Home" className="flex h-12 w-10 items-center justify-center md:mb-3 md:h-auto">
           <img src="/favicon.svg" className="h-8 w-8" alt="Formatter" />
         </button>
         {TOOLS.map((t) => (
@@ -87,8 +87,8 @@ export default function App() {
           </button>
         ))}
       </nav>
-      <div className="min-w-0 flex-1 overflow-hidden">
-        {tool === 'home' && <div className="h-full overflow-y-auto"><Home go={go} /></div>}
+      <div className="min-w-0 flex-1 overflow-y-auto pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:overflow-hidden md:pb-0">
+        {tool === 'home' && <div className="md:h-full md:overflow-y-auto"><Home go={go} /></div>}
         {keep('resize', <Resizer handoff={handoff} />)}
         {keep('banner', <Banner />)}
         {keep('check', <Preflight />)}

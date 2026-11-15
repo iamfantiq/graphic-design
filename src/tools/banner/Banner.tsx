@@ -131,8 +131,8 @@ export default function Banner() {
   const logoColors = logo?.traced?.colors ?? []
 
   return (
-    <div className="flex h-full min-h-0">
-      <aside className="w-80 shrink-0 overflow-y-auto border-r border-ink-800 bg-ink-900">
+    <div className="flex min-h-0 flex-col md:h-full md:flex-row">
+      <aside className="w-full shrink-0 border-b border-ink-800 bg-ink-900 md:w-80 md:overflow-y-auto md:border-b-0 md:border-r">
         <Panel title="Logo">
           {logo ? (
             <div className="flex items-center gap-3">
@@ -194,9 +194,9 @@ export default function Banner() {
         )}
       </aside>
 
-      <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
-        <div className="flex items-center justify-between border-b border-ink-800 px-5 py-2.5 text-xs text-ink-400">
-          <div className="flex items-center gap-4">
+      <main className="relative order-first flex min-h-[50vh] min-w-0 flex-1 flex-col overflow-hidden md:order-none md:min-h-0">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-ink-800 px-4 py-2.5 text-xs text-ink-400 md:px-5">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
             <span className="font-mono text-ink-100">{cfg.widthMm} × {cfg.heightMm} mm</span>
             <span>bleed {cfg.bleedMm} mm</span>
             <span>{cfg.colorMode.toUpperCase()}</span>
@@ -207,7 +207,7 @@ export default function Banner() {
             <Toggle checked={guides} onChange={setGuides} label="Guides" />
           </div>
         </div>
-        <div className="flex flex-1 items-center justify-center overflow-auto bg-ink-950 p-10">
+        <div className="flex flex-1 items-center justify-center overflow-auto bg-ink-950 p-4 md:p-10">
           <div ref={canvasHost} className="relative w-full" style={{ maxWidth: `min(100%, calc((100vh - 200px) * ${pageWmm / pageHmm}))` }}>
             {guides && (
               <div className="pointer-events-none absolute inset-0">
@@ -222,7 +222,7 @@ export default function Banner() {
           </div>
         </div>
         {guides && (
-          <div className="flex gap-5 border-t border-ink-800 px-5 py-2 text-[11px] text-ink-400">
+          <div className="flex flex-wrap gap-x-5 gap-y-1 border-t border-ink-800 px-4 py-2 text-[11px] text-ink-400 md:px-5">
             <span><span className="mr-1.5 inline-block h-2 w-3 border border-dashed border-cyan-400" />bleed (printed, trimmed off)</span>
             <span><span className="mr-1.5 inline-block h-2 w-3 border border-fuchsia-500" />trim (final size)</span>
             <span><span className="mr-1.5 inline-block h-2 w-3 border border-dashed border-acid" />safe area (eyelets, hems)</span>
@@ -230,7 +230,7 @@ export default function Banner() {
         )}
       </main>
 
-      <aside className="w-80 shrink-0 overflow-y-auto border-l border-ink-800 bg-ink-900">
+      <aside className="w-full shrink-0 border-b border-ink-800 bg-ink-900 md:w-80 md:overflow-y-auto md:border-b-0 md:border-l">
         <Panel title="Size">
           <Select value={preset} onChange={(v) => { setPreset(v); const p = PRESETS.find((x) => x.id === v)!; if (p.w) set({ widthMm: p.w, heightMm: p.h }) }}
             options={PRESETS.map((p) => ({ value: p.id, label: p.label }))} />

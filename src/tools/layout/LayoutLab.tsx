@@ -131,8 +131,8 @@ export default function LayoutLab({ onSendToResizer }: { onSendToResizer: (s: Lo
   const set = (k: keyof Content) => (e: { target: { value: string } }) => setContent((c) => ({ ...c, [k]: e.target.value }))
 
   return (
-    <div className="flex h-full min-h-0">
-      <aside className="w-80 shrink-0 overflow-y-auto border-r border-ink-800 bg-ink-900">
+    <div className="flex min-h-0 flex-col md:h-full md:flex-row">
+      <aside className="w-full shrink-0 border-b border-ink-800 bg-ink-900 md:w-80 md:overflow-y-auto md:border-b-0 md:border-r">
         <Panel title="Content">
           <TextInput value={content.title} onChange={set('title')} placeholder="Title" />
           <TextInput value={content.subtitle} onChange={set('subtitle')} placeholder="Subtitle" />
@@ -190,14 +190,14 @@ export default function LayoutLab({ onSendToResizer }: { onSendToResizer: (s: Lo
                     {[r.palette.bg, r.palette.fg, r.palette.accent, r.palette.alt].map((c, i) => <span key={i} className="h-3 flex-1" style={{ background: c }} />)}
                   </button>
                 )}
-                <button onClick={() => setRefs((x) => x.filter((y) => y.id !== r.id))} className="absolute right-1 top-1 hidden rounded bg-black/70 p-0.5 group-hover:block"><X className="h-3 w-3" /></button>
+                <button onClick={() => setRefs((x) => x.filter((y) => y.id !== r.id))} className="absolute right-1 top-1 rounded bg-black/70 p-0.5 md:hidden md:group-hover:block"><X className="h-3 w-3" /></button>
               </div>
             ))}
           </div>
         </Panel>
       </aside>
 
-      <main className="min-w-0 flex-1 overflow-y-auto p-6">
+      <main className="order-first min-w-0 flex-1 p-4 md:order-none md:overflow-y-auto md:p-6">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-xl font-semibold tracking-tight">Layout ideas</h1>
@@ -206,7 +206,7 @@ export default function LayoutLab({ onSendToResizer }: { onSendToResizer: (s: Lo
           <Button variant="primary" onClick={roll} disabled={!ready}><Dices className="h-4 w-4" />New ideas</Button>
         </div>
         {!ready && <Spinner label="Loading typefaces…" />}
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-5">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(220px,1fr))] sm:gap-5">
           {ideas.map((idea) => {
             const a = ARCHETYPES.find((x) => x.id === idea.archetype)!
             const url = thumbs[idea.seed]
@@ -215,8 +215,8 @@ export default function LayoutLab({ onSendToResizer }: { onSendToResizer: (s: Lo
                 <div className="relative overflow-hidden rounded-lg bg-ink-850 ring-1 ring-ink-800 transition group-hover:ring-ink-500" style={{ aspectRatio: `${fmt.w}/${fmt.h}` }}>
                   {url ? <img src={url} className="h-full w-full cursor-pointer object-cover" onClick={() => setEditing({ scene: generate(idea, fmt.w, fmt.h, content, img), idea })} />
                     : <div className="flex h-full items-center justify-center"><Spinner /></div>}
-                  <div className="absolute inset-x-2 bottom-2 flex gap-1.5 opacity-0 transition group-hover:opacity-100">
-                    <Button variant="primary" className="flex-1 !px-2" onClick={() => setEditing({ scene: generate(idea, fmt.w, fmt.h, content, img), idea })}><Pencil className="h-3.5 w-3.5" />Edit</Button>
+                  <div className="absolute bottom-2 right-2 flex gap-1.5 transition md:inset-x-2 md:opacity-0 md:group-hover:opacity-100">
+                    <Button variant="primary" className="!hidden flex-1 !px-2 md:!inline-flex" onClick={() => setEditing({ scene: generate(idea, fmt.w, fmt.h, content, img), idea })}><Pencil className="h-3.5 w-3.5" />Edit</Button>
                     <Button className="!px-2" title="Reflow this layout into every format and download" onClick={() => exportReflow(idea)} disabled={!!exporting}>
                       {exporting === String(idea.seed) ? <Spinner /> : <Package className="h-3.5 w-3.5" />}
                     </Button>
@@ -224,7 +224,7 @@ export default function LayoutLab({ onSendToResizer }: { onSendToResizer: (s: Lo
                 </div>
                 <div className="mt-2 flex items-center justify-between text-xs">
                   <span className="font-medium text-ink-100">{a.name}</span>
-                  <span className="flex items-center gap-1.5 text-ink-400">
+                  <span className="hidden items-center gap-1.5 text-ink-400 sm:flex">
                     <span className="flex overflow-hidden rounded-sm">{[idea.palette.bg, idea.palette.fg, idea.palette.accent].map((c, i) => <span key={i} className="h-2.5 w-2" style={{ background: c }} />)}</span>
                     {idea.fonts.name}
                   </span>

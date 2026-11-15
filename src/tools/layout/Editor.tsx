@@ -257,7 +257,7 @@ export default function Editor({ scene, title, onBack, onSendToResizer, kit }: {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex items-center gap-1 border-b border-ink-800 bg-ink-900 px-3 py-1.5">
+      <div className="flex items-center gap-1 overflow-x-auto border-b border-ink-800 bg-ink-900 px-2 py-1.5 md:px-3">
         <Button variant="ghost" onClick={onBack}><ArrowLeft className="h-4 w-4" />Ideas</Button>
         <div className="mx-2 h-5 w-px bg-ink-700" />
         <Tool icon={Type} label="Add text" onClick={addText} />
@@ -278,17 +278,17 @@ export default function Editor({ scene, title, onBack, onSendToResizer, kit }: {
         <Tool icon={AlignVerticalJustifyCenter} label="Centre vertically" onClick={() => align('v')} disabled={!sel} />
         <Tool icon={Trash2} label="Delete" onClick={remove} disabled={!sel} />
         <div className="ml-auto flex items-center gap-2">
-          <span className="font-mono text-xs text-ink-400">{W}×{H}</span>
-          <Button onClick={sendToResizer} title="Open this design in the Social Resizer"><Send className="h-4 w-4" />Resize for social</Button>
+          <span className="hidden font-mono text-xs text-ink-400 md:inline">{W}×{H}</span>
+          <Button onClick={sendToResizer} title="Open this design in the Social Resizer" className="whitespace-nowrap"><Send className="h-4 w-4" /><span className="hidden sm:inline">Resize for social</span></Button>
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1">
-        <div ref={hostRef} className="checker flex min-w-0 flex-1 items-center justify-center overflow-hidden">
+      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+        <div ref={hostRef} className="checker flex h-[62vh] min-w-0 shrink-0 items-center justify-center overflow-hidden md:h-auto md:flex-1 md:shrink">
           <div className="shadow-2xl"><canvas ref={elRef} /></div>
         </div>
 
-        <aside className="w-72 shrink-0 overflow-y-auto border-l border-ink-800 bg-ink-900">
+        <aside className="w-full shrink-0 border-b border-ink-800 bg-ink-900 md:w-72 md:overflow-y-auto md:border-b-0 md:border-l">
           {sel ? (
             <Panel title={isText ? 'Text' : (sel as Named).name ?? sel.type}>
               {isText && (<>

@@ -73,7 +73,7 @@ function Preview({ item, fmt, adj, selected, onSelect, onPan, showSafe }: {
       </div>
       <div className="checker relative flex flex-1 items-center justify-center overflow-hidden rounded-md p-3" style={{ minHeight: 220 }}>
         <div className="relative" style={{ aspectRatio: `${fmt.w}/${fmt.h}`, width: fmt.w >= fmt.h ? '100%' : undefined, height: fmt.h > fmt.w ? 360 : undefined, maxWidth: '100%' }}>
-          <canvas ref={ref} className="block h-full w-full cursor-grab touch-none shadow-lg active:cursor-grabbing"
+          <canvas ref={ref} className="block h-full w-full cursor-grab touch-pan-y shadow-lg md:touch-none active:cursor-grabbing"
             onPointerDown={(e) => { onSelect(); (e.target as HTMLElement).setPointerCapture(e.pointerId); drag.current = { x: e.clientX, y: e.clientY, ox: adj.ox, oy: adj.oy } }}
             onPointerMove={(e) => {
               if (!drag.current) return
@@ -208,8 +208,8 @@ export default function Resizer({ handoff }: { handoff?: LoadedSource | null }) 
   const anyBusy = items.some((i) => i.aiBusy)
 
   return (
-    <div className="flex h-full min-h-0">
-      <aside className="w-72 shrink-0 overflow-y-auto border-r border-ink-800 bg-ink-900">
+    <div className="flex min-h-0 flex-col md:h-full md:flex-row">
+      <aside className="w-full shrink-0 border-b border-ink-800 bg-ink-900 md:w-72 md:overflow-y-auto md:border-b-0 md:border-r">
         <Panel title={`Files (${items.length})`}>
           <div className="space-y-1">
             {items.map((it) => (
@@ -223,7 +223,7 @@ export default function Resizer({ handoff }: { handoff?: LoadedSource | null }) 
                       : it.ai ? <><Sparkles className="h-3 w-3 text-acid" />AI layout</> : <><ScanSearch className="h-3 w-3" />smart crop</>}
                   </div>
                 </div>
-                <button title="Remove" className="hidden p-1 text-ink-400 hover:text-ink-100 group-hover:block"
+                <button title="Remove" className="p-1 text-ink-400 hover:text-ink-100 md:hidden md:group-hover:block"
                   onClick={(e) => { e.stopPropagation(); setItems((xs) => xs.filter((x) => x.id !== it.id)) }}><X className="h-3.5 w-3.5" /></button>
               </div>
             ))}
@@ -255,7 +255,10 @@ export default function Resizer({ handoff }: { handoff?: LoadedSource | null }) 
         </Panel>
       </aside>
 
-      <main className="min-w-0 flex-1 overflow-y-auto p-6">
+      <main className="order-first min-w-0 flex-1 p-4 md:order-none md:overflow-y-auto md:p-6">
+        <Button variant="primary" className="mb-3 w-full md:hidden" onClick={exportAll} disabled={exporting || !formats.length}>
+          <Package className="h-4 w-4" /> {exporting ? 'Exporting…' : `Download ${items.length * formats.length} images (.zip)`}
+        </Button>
         <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-ink-800 bg-ink-900 px-4 py-3">
           <Sparkles className="h-4 w-4 text-acid" />
           <div className="min-w-0 flex-1 text-sm">
@@ -275,7 +278,7 @@ export default function Resizer({ handoff }: { handoff?: LoadedSource | null }) 
             {items.length > 1 && <Button onClick={() => items.filter((i) => !i.ai).forEach(runAi)} disabled={anyBusy}>All files</Button>}
           </>)}
         </div>
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(min(300px,100%),1fr))] gap-4">
           {formats.map((f) => (
             <Preview key={f.id} item={item} fmt={f} adj={adj(item, f.id)} selected={sel?.id === f.id}
               showSafe={showSafe} onSelect={() => setSelected(f.id)} onPan={(ox, oy) => update(f.id, { ox, oy })} />
@@ -285,7 +288,7 @@ export default function Resizer({ handoff }: { handoff?: LoadedSource | null }) 
       </main>
 
       {sel && (
-        <aside className="w-72 shrink-0 overflow-y-auto border-l border-ink-800 bg-ink-900">
+        <aside className="w-full shrink-0 border-b border-ink-800 bg-ink-900 md:w-72 md:overflow-y-auto md:border-b-0 md:border-l">
           <Panel title={`Adjust ${sel.short}`} right={<span className="font-mono text-[11px] text-ink-400">{sel.w}×{sel.h}</span>}>
             <div className="text-xs text-ink-300">Placement</div>
             <div className="grid grid-cols-2 gap-1.5">
