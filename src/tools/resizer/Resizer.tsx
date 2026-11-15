@@ -5,6 +5,7 @@ import { ACCEPT_DESIGN, loadSource, type LoadedSource } from '../../lib/files'
 import { baseName, canvasToBlob, downloadBlob, downloadZip } from '../../lib/download'
 import { contentBox, foregroundMask, normaliseAnalysis, type AiResult, type Mask } from '../../lib/smart'
 import { aiStatus, analyzePoster, getCode, setCode, type AiStatus } from '../../lib/ai'
+import Mockups from './Mockups'
 import {
   analyse, DEFAULT_ADJUST, DEFAULT_FORMATS, FORMATS, renderFormat, resolveFill, resolvePlacement,
   type Adjust, type Fill, type FormatSpec, type Placement, type SourceInfo,
@@ -120,6 +121,7 @@ export default function Resizer({ handoff }: { handoff?: LoadedSource | null }) 
   const [format, setFormat] = useState<'png' | 'jpg'>('png')
   const [showSafe, setShowSafe] = useState(true)
   const [showBoxes, setShowBoxes] = useState(true)
+  const [view, setView] = useState<'formats' | 'mockups'>('formats')
   const [carousel, setCarousel] = useState<{ on: boolean; n: number; ratio: '4:5' | '1:1' }>({ on: false, n: 3, ratio: '4:5' })
   const [exporting, setExporting] = useState(false)
   const [ai, setAi] = useState<AiStatus | null>(null)
@@ -310,12 +312,15 @@ export default function Resizer({ handoff }: { handoff?: LoadedSource | null }) 
             {items.length > 1 && <Button onClick={() => items.filter((i) => !i.ai).forEach(runAi)} disabled={anyBusy}>All files</Button>}
           </>)}
         </div>
+        <div className="mb-4 w-64"><Segmented value={view} onChange={setView} options={[{ value: 'formats', label: 'Formats' }, { value: 'mockups', label: 'Phone preview' }]} /></div>
+        {view === 'mockups' ? <Mockups items={[...items].reverse()} active={item} adj={(it, id) => it.adjust[id] ?? DEFAULT_ADJUST} /> : (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(min(300px,100%),1fr))] gap-4">
           {formats.map((f) => (
             <Preview key={f.id} item={item} fmt={f} adj={adj(item, f.id)} selected={sel?.id === f.id}
               showSafe={showSafe} onSelect={() => setSelected(f.id)} onPan={(ox, oy) => update(f.id, { ox, oy })} />
           ))}
         </div>
+        )}
         {!formats.length && <p className="text-ink-400">Pick at least one format on the left.</p>}
       </main>
 

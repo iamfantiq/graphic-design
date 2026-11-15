@@ -9,7 +9,8 @@ import { ARCHETYPES, generate, type GenImage, type Idea } from './generator'
 import { renderScene } from './fabricScene'
 import type { Scene } from './scene'
 import Editor from './Editor'
-import { deleteDesign, listDesigns, onDesignsChange, type SavedDesign } from '../../lib/store'
+import { deleteDesign, listDesigns, onDesignsChange, putDesign, type SavedDesign } from '../../lib/store'
+import { renderJson } from './adapt'
 import type { DocFormat } from './design'
 import { kitPalette, useBrandKits } from '../../lib/brand'
 import { ALL_FONTS } from './design'
@@ -131,7 +132,7 @@ export default function LayoutLab({ onSendToResizer }: { onSendToResizer: (s: Lo
   const openSaved = (d: SavedDesign) => setEditing({ scene: { w: d.w, h: d.h, bg: '#ffffff', els: [] }, format: DOC_FORMATS.find((f) => f.id === d.formatId) ?? fmt, title: d.name, json: d.json, id: d.id })
 
   if (editing) {
-    return <Editor key={editing.id ?? 'new'} scene={editing.scene} kit={kit} title={editing.title} format={editing.format} initialJson={editing.json} designId={editing.id}
+    return <Editor key={editing.id ?? 'new'} scene={editing.scene} kit={kit} title={editing.title} format={editing.format} initialJson={editing.json} designId={editing.id} onOpenDesign={openSaved}
       onBack={() => setEditing(null)} onSendToResizer={onSendToResizer} />
   }
 
@@ -212,6 +213,20 @@ export default function LayoutLab({ onSendToResizer }: { onSendToResizer: (s: Lo
           </div>
           <Button variant="primary" onClick={roll} disabled={!ready}><Dices className="h-4 w-4" />New ideas</Button>
         </div>
+        <label className="mb-4 inline-flex cursor-pointer items-center gap-1.5 text-xs text-ink-400 hover:text-ink-100">
+          <FolderOpen className="h-3.5 w-3.5" />Open a .formatter.json design file
+          <input type="file" accept=".json,application/json" hidden onChange={async (e) => {
+            const f = e.target.files?.[0]; e.target.value = ''
+            if (!f) return
+            try {
+              const d = JSON.parse(await f.text())
+              if (d.app !== 'formatter' || !d.json) throw new Error('Not a Formatter design file')
+              const thumb = await renderJson(d.json, d.w, d.h, 360 / Math.max(d.w, d.h))
+              const sd: SavedDesign = { id: Math.random().toString(36).slice(2), name: d.name ?? f.name, formatId: d.formatId, w: d.w, h: d.h, json: d.json, thumb, updated: Date.now() }
+              await putDesign(sd); openSaved(sd)
+            } catch (err) { alert((err as Error).message) }
+          }} />
+        </label>
         {saved.length > 0 && (
           <section className="mb-8">
             <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-ink-300"><FolderOpen className="h-4 w-4" />My designs <span className="font-normal text-ink-400">— saved on this device</span></h2>

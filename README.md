@@ -37,6 +37,9 @@ Turns a logo into a clean **vector PDF** for large-format print.
 - **Panorama carousel**: one wide image is cut into 2–10 seamless 4:5 or 1:1 slides.
 - **Saved designs**: editor work autosaves to IndexedDB (on this device) and appears under *My designs*.
 - **AI proofread** (Claude): typos, wrong date/weekday pairs, missing info, legibility, contrast and hierarchy. Available in Print Check and the editor (`api/proof.ts`).
+- **Phone preview**: generic feed, story, profile grid (3:4 tiles, the whole batch) and video mock-ups for checking crops and UI overlap before posting.
+- **Adapt edited designs**: the editor re-flows your own edits into any other format (anchors, stretching bands, re-cropped photos), as an editable copy or straight into a ZIP of all social formats.
+- **Design files**: save and open `.formatter.json` to move designs between devices or share them with a colleague.
 - **Installable / offline**: PWA manifest and service worker. Everything except AI works without a connection.
 
 ### 3. Print Check (preflight)

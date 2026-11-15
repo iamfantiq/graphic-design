@@ -3,10 +3,11 @@ import { ActiveSelection, Canvas, Circle, FabricImage, Line, Path, Rect, Textbox
 import {
   ArrowLeft, Type, Square, Circle as CircleIcon, Minus, ImagePlus, Undo2, Redo2, Copy, Trash2,
   BringToFront, SendToBack, Download, Send, Eye, EyeOff, Lock, Unlock, AlignHorizontalJustifyCenter, AlignVerticalJustifyCenter,
-  AlignLeft, AlignCenter, AlignRight, Star, QrCode, Printer, SpellCheck, CheckCircle2, AlertTriangle, XCircle, Info,
+  AlignLeft, AlignCenter, AlignRight, Star, QrCode, Shuffle, FileDown, Package, Printer, SpellCheck, CheckCircle2, AlertTriangle, XCircle, Info,
 } from 'lucide-react'
 import { Button, ColorInput, Field, NumberInput, Panel, Segmented, Select, Slider, Spinner, Toggle } from '../../components/ui'
-import { ALL_FONTS, type DocFormat } from './design'
+import { ALL_FONTS, DOC_FORMATS, type DocFormat } from './design'
+import { adaptDesign, renderJson } from './adapt'
 import { sceneObjects } from './fabricScene'
 import type { Scene } from './scene'
 import type { LoadedSource } from '../../lib/files'
@@ -15,16 +16,17 @@ import { kitLogoFile, type BrandKit } from '../../lib/brand'
 import { loadSource } from '../../lib/files'
 import { exportVectorPdf } from './pdfExport'
 import { qrPath } from '../../lib/qr'
-import { inlineBlobUrls, putDesign } from '../../lib/store'
+import { inlineBlobUrls, putDesign, type SavedDesign } from '../../lib/store'
+import { downloadZip } from '../../lib/download'
 import { aiStatus, proofread } from '../../lib/ai'
 import type { Proof } from '../../../shared/proof'
 
 type Named = FabricObject & { name?: string }
 const PROPS = ['name', 'selectable', 'evented', 'lockMovementX', 'lockMovementY', 'svgD']
 
-export default function Editor({ scene, title, onBack, onSendToResizer, kit, format, initialJson, designId }: {
+export default function Editor({ scene, title, onBack, onSendToResizer, kit, format, initialJson, designId, onOpenDesign }: {
   scene: Scene; title: string; onBack: () => void; onSendToResizer: (s: LoadedSource) => void; kit?: BrandKit | null
-  format: DocFormat; initialJson?: string; designId?: string
+  format: DocFormat; initialJson?: string; designId?: string; onOpenDesign?: (d: SavedDesign) => void
 }) {
   const idRef = useRef(designId ?? Math.random().toString(36).slice(2))
   const [docName, setDocName] = useState(title)
@@ -209,6 +211,38 @@ export default function Editor({ scene, title, onBack, onSendToResizer, kit, for
       setPdfNotes(warnings)
     } catch (e) { console.error(e); setPdfNotes([`Export failed: ${(e as Error).message}`]) } finally { setPdfBusy(false) }
   }
+  const [adaptTo, setAdaptTo] = useState(DOC_FORMATS.find((f) => f.id !== format.id)!.id)
+  const [adaptBusy, setAdaptBusy] = useState<string | null>(null)
+  const currentJson = async () => inlineBlobUrls(JSON.stringify(c().toObject(PROPS)))
+  async function openAdapted() {
+    const f = DOC_FORMATS.find((x) => x.id === adaptTo)!
+    setAdaptBusy('Adapting…')
+    try {
+      const json = await adaptDesign(await currentJson(), W, H, f.w, f.h)
+      const thumb = await renderJson(json, f.w, f.h, 360 / Math.max(f.w, f.h))
+      const d: SavedDesign = { id: Math.random().toString(36).slice(2), name: `${docName} — ${f.label}`, formatId: f.id, w: f.w, h: f.h, json, thumb, updated: Date.now() }
+      await putDesign(d)
+      onOpenDesign?.(d)
+    } finally { setAdaptBusy(null) }
+  }
+  async function exportAllSocial() {
+    setAdaptBusy('Rendering formats…')
+    try {
+      const src = await currentJson()
+      const files = []
+      for (const f of DOC_FORMATS.filter((x) => ['45', '11', '916', '169'].includes(x.id))) {
+        const json = f.w === W && f.h === H ? src : await adaptDesign(src, W, H, f.w, f.h)
+        const url = await renderJson(json, f.w, f.h)
+        files.push({ name: `${baseName(docName)}_${f.id}_${f.w}x${f.h}.png`, data: await (await fetch(url)).blob() })
+      }
+      await downloadZip(files, `${baseName(docName)}_social.zip`)
+    } finally { setAdaptBusy(null) }
+  }
+  async function saveFile() {
+    const data = { app: 'formatter', version: 1, name: docName, formatId: format.id, w: W, h: H, json: await currentJson() }
+    downloadBlob(new Blob([JSON.stringify(data)], { type: 'application/json' }), `${baseName(docName)}.formatter.json`)
+  }
+
   async function runProof() {
     setProofBusy(true); setProofErr(null)
     try {
@@ -430,6 +464,14 @@ export default function Editor({ scene, title, onBack, onSendToResizer, kit, for
               <Button onClick={() => exportAs('jpg')}><Download className="h-3.5 w-3.5" />JPG</Button>
               <Button onClick={() => exportAs('svg')} className="col-span-2" title="Vector SVG (fonts referenced by name)"><Download className="h-3.5 w-3.5" />SVG</Button>
             </div>
+          </Panel>
+
+          <Panel title="Adapt to other formats">
+            <Select value={adaptTo} onChange={setAdaptTo} options={DOC_FORMATS.filter((f) => f.id !== format.id).map((f) => ({ value: f.id, label: f.label }))} />
+            <Button className="w-full" onClick={openAdapted} disabled={!!adaptBusy}><Shuffle className="h-4 w-4" />Open adapted copy</Button>
+            <Button className="w-full" onClick={exportAllSocial} disabled={!!adaptBusy}>{adaptBusy ? <Spinner label={adaptBusy} /> : <><Package className="h-4 w-4" />All social formats (.zip)</>}</Button>
+            <p className="text-xs text-ink-400">Your edits are re-flowed: edge-anchored elements stay on their edge, full-width bands stretch, photos re-crop. A starting point — fine-tune the copy.</p>
+            <Button variant="ghost" className="w-full" onClick={saveFile}><FileDown className="h-4 w-4" />Save as file (.formatter.json)</Button>
           </Panel>
 
           <Panel title="Print PDF (vector)">
