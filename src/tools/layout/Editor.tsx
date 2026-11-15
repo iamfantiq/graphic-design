@@ -3,11 +3,13 @@ import { ActiveSelection, Canvas, Circle, FabricImage, Line, Path, Rect, Textbox
 import {
   ArrowLeft, Type, Square, Circle as CircleIcon, Minus, ImagePlus, Undo2, Redo2, Copy, Trash2,
   BringToFront, SendToBack, Download, Send, Eye, EyeOff, Lock, Unlock, AlignHorizontalJustifyCenter, AlignVerticalJustifyCenter,
-  AlignLeft, AlignCenter, AlignRight, Star, QrCode, Shuffle, FileDown, Package, Printer, SpellCheck, CheckCircle2, AlertTriangle, XCircle, Info,
+  AlignLeft, AlignCenter, AlignRight, Star, QrCode, Shuffle, FileDown, Package, Film, Printer, SpellCheck, CheckCircle2, AlertTriangle, XCircle, Info,
 } from 'lucide-react'
 import { Button, ColorInput, Field, NumberInput, Panel, Segmented, Select, Slider, Spinner, Toggle } from '../../components/ui'
 import { ALL_FONTS, DOC_FORMATS, type DocFormat } from './design'
 import { adaptDesign, renderJson } from './adapt'
+import { ease, encodeMp4, videoSupported } from '../../lib/video'
+import { StaticCanvas } from 'fabric'
 import { sceneObjects } from './fabricScene'
 import type { Scene } from './scene'
 import type { LoadedSource } from '../../lib/files'
@@ -15,6 +17,7 @@ import { baseName, downloadBlob } from '../../lib/download'
 import { kitLogoFile, type BrandKit } from '../../lib/brand'
 import { loadSource } from '../../lib/files'
 import { exportVectorPdf } from './pdfExport'
+import { hexToRgb, rgbToCmyk } from '../../lib/color'
 import { qrPath } from '../../lib/qr'
 import { inlineBlobUrls, putDesign, type SavedDesign } from '../../lib/store'
 import { downloadZip } from '../../lib/download'
@@ -203,9 +206,10 @@ export default function Editor({ scene, title, onBack, onSendToResizer, kit, for
     try {
       c().discardActiveObject(); c().requestRenderAll()
       const overrides = kit ? Object.fromEntries(kit.colors.filter((x) => x.cmyk).map((x) => [x.hex, x.cmyk!])) : {}
+      const spots = kit ? Object.fromEntries(kit.colors.filter((x) => x.spot).map((x) => [x.hex, { name: x.spot!, cmyk: x.cmyk ?? rgbToCmyk(hexToRgb(x.hex)) }])) : {}
       const { bytes, warnings } = await exportVectorPdf(c(), W, H, {
         widthMm: printSize.w, heightMm: printSize.h, bleedMm: pdf.bleed, cropMarks: pdf.marks,
-        colorMode: pdf.cmyk ? 'cmyk' : 'rgb', cmykOverrides: overrides, title: docName,
+        colorMode: pdf.cmyk ? 'cmyk' : 'rgb', cmykOverrides: overrides, spots, title: docName,
       })
       downloadBlob(new Blob([bytes.slice()], { type: 'application/pdf' }), `${baseName(docName)}_${printSize.w}x${printSize.h}mm${pdf.bleed ? `_bleed${pdf.bleed}` : ''}_${pdf.cmyk ? 'cmyk' : 'rgb'}.pdf`)
       setPdfNotes(warnings)
@@ -238,6 +242,47 @@ export default function Editor({ scene, title, onBack, onSendToResizer, kit, for
       await downloadZip(files, `${baseName(docName)}_social.zip`)
     } finally { setAdaptBusy(null) }
   }
+  const [motion, setMotion] = useState<'rise' | 'fade' | 'scale'>('rise')
+  const [motionBusy, setMotionBusy] = useState<string | null>(null)
+  const [motionErr, setMotionErr] = useState<string | null>(null)
+  async function exportMotion() {
+    setMotionErr(null); setMotionBusy('Rendering… 0%')
+    try {
+      const sc = new StaticCanvas(document.createElement('canvas'), { width: W, height: H, renderOnAddRemove: false, enableRetinaScaling: false })
+      await sc.loadFromJSON(JSON.stringify(c().toObject(PROPS)))
+      const objs = sc.getObjects().filter((o) => o.visible)
+      const base = objs.map((o) => ({ top: o.top, left: o.left, opacity: o.opacity ?? 1, sx: o.scaleX ?? 1, sy: o.scaleY ?? 1, c: o.getCenterPoint() }))
+      // full-frame backgrounds stay put; everything else enters in layer order
+      const isBg = objs.map((o) => { const b = o.getBoundingRect(); return b.width >= W * 0.9 && b.height >= H * 0.9 })
+      const movers = objs.map((_, i) => i).filter((i) => !isBg[i])
+      const dur = 0.7, stagger = Math.min(0.18, 1.8 / Math.max(1, movers.length))
+      const seconds = Math.max(4, 0.3 + movers.length * stagger + dur + 2.5)
+      const { blob, codec } = await encodeMp4({
+        width: W, height: H, seconds,
+        onProgress: (p) => setMotionBusy(`Rendering… ${Math.round(p * 100)}%`),
+        draw: (_i, t) => {
+          movers.forEach((idx, k) => {
+            const o = objs[idx], b0 = base[idx]
+            const p = ease.outCubic((t - 0.3 - k * stagger) / dur)
+            o.set({ opacity: b0.opacity * p })
+            if (motion === 'rise') o.set({ top: b0.top + (1 - p) * H * 0.035 })
+            if (motion === 'scale') {
+              const s = 0.9 + 0.1 * p
+              o.set({ scaleX: b0.sx * s, scaleY: b0.sy * s })
+              o.setPositionByOrigin(b0.c, 'center', 'center')
+            }
+          })
+          sc.renderAll()
+          return sc.getElement()
+        },
+      })
+      sc.dispose()
+      downloadBlob(blob, `${baseName(docName)}_${motion}_${W}x${H}.mp4`)
+      setMotionBusy(null)
+      if (codec !== 'H.264') setMotionErr('Saved as VP9 — this browser has no H.264 encoder.')
+    } catch (e) { setMotionErr((e as Error).message); setMotionBusy(null) }
+  }
+
   async function saveFile() {
     const data = { app: 'formatter', version: 1, name: docName, formatId: format.id, w: W, h: H, json: await currentJson() }
     downloadBlob(new Blob([JSON.stringify(data)], { type: 'application/json' }), `${baseName(docName)}.formatter.json`)
@@ -473,6 +518,15 @@ export default function Editor({ scene, title, onBack, onSendToResizer, kit, for
             <p className="text-xs text-ink-400">Your edits are re-flowed: edge-anchored elements stay on their edge, full-width bands stretch, photos re-crop. A starting point — fine-tune the copy.</p>
             <Button variant="ghost" className="w-full" onClick={saveFile}><FileDown className="h-4 w-4" />Save as file (.formatter.json)</Button>
           </Panel>
+
+          {videoSupported() && (
+            <Panel title="Motion (MP4)">
+              <Segmented value={motion} onChange={setMotion} options={[{ value: 'rise', label: 'Rise' }, { value: 'fade', label: 'Fade' }, { value: 'scale', label: 'Scale' }]} />
+              <Button className="w-full" onClick={exportMotion} disabled={!!motionBusy}>{motionBusy ? <Spinner label={motionBusy} /> : <><Film className="h-4 w-4" />Animated MP4</>}</Button>
+              {motionErr && <p className="text-xs text-amber-300">{motionErr}</p>}
+              <p className="text-xs text-ink-400">Layers enter one by one (bottom layer first), then the design holds for 2.5 s. Reorder layers to change the sequence.</p>
+            </Panel>
+          )}
 
           <Panel title="Print PDF (vector)">
             <Select value={String(pdf.size)} onChange={(v) => setPdf({ ...pdf, size: Number(v) })}

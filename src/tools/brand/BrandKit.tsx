@@ -112,6 +112,8 @@ export default function BrandKit() {
                         ))}
                       </div>
                       {!c.cmyk && <p className="mt-1 text-[11px] text-ink-400">Converted from RGB — type the official values from the brand book.</p>}
+                      <input value={c.spot ?? ''} onChange={(e) => setColor(i, { spot: e.target.value || undefined })} placeholder="Spot ink, e.g. PANTONE 485 C (optional)"
+                        className="mt-1.5 w-full rounded border border-ink-700 bg-ink-950 px-2 py-1 font-mono text-xs text-ink-300 outline-none focus:border-acid" />
                     </div>
                   )
                 })}

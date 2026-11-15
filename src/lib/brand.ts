@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { contrast, hexToRgb, luminance, saturation } from './color'
 
-export interface BrandColor { hex: string; name: string; cmyk?: [number, number, number, number] }
+export interface BrandColor { hex: string; name: string; cmyk?: [number, number, number, number]; spot?: string }
 export interface BrandKit {
   id: string
   name: string

@@ -8,6 +8,7 @@ import { DEFAULT_TRACE, isVectorFile, loadVectorLogo, traceRaster, type Logo, ty
 import { buildBannerPdf, DEFAULT_CONFIG, geometry, pdfScale, type BannerConfig, type Layout } from './buildPdf'
 import { FONTS, type FontKey } from './fonts'
 import { kitLogoFile, useBrandKits, type BrandKit } from '../../lib/brand'
+import { FLUO_SPOTS } from '../../lib/pdfInk'
 
 function KitSwatches({ kit, onPick }: { kit: BrandKit | null; onPick: (hex: string) => void }) {
   if (!kit) return null
@@ -36,7 +37,14 @@ function CmykFields({ hex, cfg, set }: { hex: string; cfg: BannerConfig; set: (c
   if (cfg.colorMode !== 'cmyk') return null
   const v = cfg.cmykOverrides[hex] ?? rgbToCmyk(hexToRgb(hex))
   const overridden = !!cfg.cmykOverrides[hex]
+  const spot = cfg.spots[hex]
+  const setSpot = (s: typeof spot | null) => {
+    const next = { ...cfg.spots }
+    if (s) next[hex] = s; else delete next[hex]
+    set({ spots: next })
+  }
   return (
+    <>
     <div className="mt-1.5 grid grid-cols-4 gap-1">
       {(['C', 'M', 'Y', 'K'] as const).map((ch, i) => (
         <label key={ch} className="relative">
@@ -51,6 +59,22 @@ function CmykFields({ hex, cfg, set }: { hex: string; cfg: BannerConfig; set: (c
         </label>
       ))}
     </div>
+    <label className="mt-1.5 flex items-center gap-2 text-[11px] text-ink-400">
+      <input type="checkbox" checked={!!spot} onChange={(e) => setSpot(e.target.checked ? { name: 'PANTONE ', cmyk: v } : null)} />
+      Print as spot ink (Pantone / fluorescent)
+    </label>
+    {spot && (
+      <div className="mt-1 grid grid-cols-[1fr_auto] gap-1">
+        <input value={spot.name} onChange={(e) => setSpot({ ...spot, name: e.target.value })} placeholder="PANTONE 806 C"
+          className="rounded border border-acid/50 bg-ink-900 px-2 py-1 font-mono text-xs text-acid outline-none" />
+        <select className="rounded border border-ink-700 bg-ink-900 px-1 text-xs text-ink-300" value=""
+          onChange={(e) => { const f = FLUO_SPOTS.find((x) => x.name === e.target.value); if (f) set({ spots: { ...cfg.spots, [hex]: { ...f } }, cmykOverrides: { ...cfg.cmykOverrides, [hex]: f.cmyk } }) }}>
+          <option value="">Fluo…</option>
+          {FLUO_SPOTS.map((f) => <option key={f.name} value={f.name}>{f.name.replace('PANTONE ', '')}</option>)}
+        </select>
+      </div>
+    )}
+    </>
   )
 }
 
@@ -73,7 +97,8 @@ export default function Banner() {
   useEffect(() => {
     if (!kit) return
     const o = Object.fromEntries(kit.colors.filter((c) => c.cmyk).map((c) => [c.hex, c.cmyk!]))
-    if (Object.keys(o).length) setCfg((c) => ({ ...c, cmykOverrides: { ...c.cmykOverrides, ...o } }))
+    const sp = Object.fromEntries(kit.colors.filter((c) => c.spot).map((c) => [c.hex, { name: c.spot!, cmyk: c.cmyk ?? rgbToCmyk(hexToRgb(c.hex)) }]))
+    if (Object.keys(o).length || Object.keys(sp).length) setCfg((c) => ({ ...c, cmykOverrides: { ...c.cmykOverrides, ...o }, spots: { ...c.spots, ...sp } }))
   }, [kit])
 
   async function openLogo(f: File, opt = trace) {
@@ -253,6 +278,10 @@ export default function Banner() {
             <KitSwatches kit={kit} onPick={(v) => set({ bg: v })} />
             <CmykFields hex={cfg.bg} cfg={cfg} set={set} />
           </Field>
+          {cfg.colorMode === 'cmyk' && (<>
+            <Toggle checked={cfg.richBlack} onChange={(v) => set({ richBlack: v })} label="Rich black for black areas (60/40/40/100)" />
+            <Toggle checked={cfg.overprintBlack} onChange={(v) => set({ overprintBlack: v })} label="Overprint black text (no white gaps)" />
+          </>)}
           {cfg.colorMode === 'cmyk' && <p className="text-xs text-ink-400">CMYK values are converted from RGB as a starting point — type your brand’s exact CMYK from the guideline. For rich black use e.g. 60/40/40/100.</p>}
         </Panel>
 
@@ -285,14 +314,14 @@ export default function Banner() {
                 }} />
             </div>
           </>) : (<>
-            <Slider label="Logo size" value={cfg.logoSize} min={0.1} max={1} step={0.01} onChange={(v) => set({ logoSize: v })} format={(v) => `${Math.round(v * 100)}% of safe height`} />
+            <Slider label={logo ? 'Logo size' : 'Text block size'} value={cfg.logoSize} min={0.1} max={1} step={0.01} onChange={(v) => set({ logoSize: v })} format={(v) => `${Math.round(v * 100)}% of safe height`} />
             <Slider label="Horizontal position" value={cfg.offsetX} min={-1} max={1} step={0.01} onChange={(v) => set({ offsetX: v })} format={(v) => v.toFixed(2)} />
             <Slider label="Vertical position" value={cfg.offsetY} min={-1} max={1} step={0.01} onChange={(v) => set({ offsetY: v })} format={(v) => v.toFixed(2)} />
           </>)}
         </Panel>
 
         {cfg.layout !== 'repeat' && (
-          <Panel title="Text (converted to outlines)">
+          <Panel title={logo ? 'Text (converted to outlines)' : 'Text-only banner (outlined)'}>
             <TextInput placeholder="Tagline, e.g. Coffee roasters since 2009" value={cfg.text1} onChange={(e) => set({ text1: e.target.value })} />
             <TextInput placeholder="Second line, e.g. www.example.com" value={cfg.text2} onChange={(e) => set({ text2: e.target.value })} />
             {(cfg.text1 || cfg.text2) && (<>

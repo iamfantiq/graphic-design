@@ -1,4 +1,5 @@
 import { PDFDocument, StandardFonts, cmyk, rgb, type Color, type PDFEmbeddedPage } from 'pdf-lib'
+import { Ink, type Paint, type Spot } from '../../lib/pdfInk'
 import { hexToRgb, rgbToCmyk } from '../../lib/color'
 import type { Logo } from './logo'
 import { loadFamily, textToPath, type FontKey } from './fonts'
@@ -35,6 +36,10 @@ export interface BannerConfig {
   qrSize: number // mm, including quiet zone
   qrCorner: 'br' | 'bl' | 'tr' | 'tl'
   qrTile: boolean
+  /** hex colours that print as a named spot ink */
+  spots: Record<string, Spot>
+  richBlack: boolean
+  overprintBlack: boolean
 }
 
 export const DEFAULT_CONFIG: BannerConfig = {
@@ -43,6 +48,7 @@ export const DEFAULT_CONFIG: BannerConfig = {
   text1: '', text2: '', textColor: '#111111', font: 'inter', textSize: 0.22, tracking: 0, uppercase: false,
   repeatSize: 180, repeatGap: 0.6, repeatStagger: true,
   qrText: '', qrSize: 150, qrCorner: 'br', qrTile: true,
+  spots: {}, richBlack: false, overprintBlack: true,
 }
 
 /** PDF pages are limited to 200 × 200 in (5080 mm). Larger formats are built at 1:10 — standard practice for large-format print. */
@@ -70,10 +76,25 @@ export function colorFor(cfg: BannerConfig, hex: string): Color {
   return cmyk(c[0] / 100, c[1] / 100, c[2] / 100, c[3] / 100)
 }
 
+const isBlack = (hex: string) => { const [r, g, b] = hexToRgb(hex); return Math.max(r, g, b) <= 40 && Math.max(r, g, b) - Math.min(r, g, b) <= 12 }
+
+/** How a colour is actually inked: spot, rich black or plain process colour. */
+export function paintFor(cfg: BannerConfig, hex: string, role: 'area' | 'text' = 'area'): { paint: Paint; overprint: boolean } {
+  if (cfg.colorMode === 'cmyk') {
+    const spot = cfg.spots[hex]
+    if (spot) return { paint: { spot }, overprint: false }
+    if (isBlack(hex)) {
+      if (role === 'text' && cfg.overprintBlack) return { paint: { color: cmyk(0, 0, 0, 1) }, overprint: true }
+      if (cfg.richBlack) return { paint: { color: cmyk(0.6, 0.4, 0.4, 1) }, overprint: false }
+    }
+  }
+  return { paint: { color: colorFor(cfg, hex) }, overprint: false }
+}
+
 interface Box { x: number; y: number; w: number; h: number } // mm, trim space, top-left origin
 
 /** Layout maths shared by the PDF builder and the on-screen guides. */
-export function layoutBoxes(cfg: BannerConfig, logoAspect: number, text: { w1: number; w2: number; h1: number; h2: number } | null) {
+export function layoutBoxes(cfg: BannerConfig, logoAspect: number, text: { w1: number; w2: number; h1: number; h2: number } | null, textOnly = false) {
   const safe: Box = { x: cfg.safeMm, y: cfg.safeMm, w: cfg.widthMm - 2 * cfg.safeMm, h: cfg.heightMm - 2 * cfg.safeMm }
   let lh = safe.h * cfg.logoSize
   let lw = lh * logoAspect
@@ -84,6 +105,7 @@ export function layoutBoxes(cfg: BannerConfig, logoAspect: number, text: { w1: n
   const measure = (h: number) => {
     const tw = Math.max(t.w1, t.w2) * h, th = (t.h1 + t.h2) * h + (t.h1 && t.h2 ? 0.12 * h : 0)
     if (!hasText) return { gw: lh * logoAspect * (h / lh), gh: h }
+    if (textOnly) return { gw: tw, gh: th }
     if (cfg.layout === 'center') return { gw: Math.max(h * logoAspect, tw), gh: h + gap * h + th }
     return { gw: h * logoAspect + gap * h * 1.4 + tw, gh: Math.max(h, th) }
   }
@@ -95,7 +117,13 @@ export function layoutBoxes(cfg: BannerConfig, logoAspect: number, text: { w1: n
   const gy = safe.y + (safe.h - gh) / 2 + (cfg.offsetY * (safe.h - gh)) / 2
   const logo: Box = { x: gx, y: gy, w: lw, h: lh }
   const lines: { x: number; y: number; size: number; align: 'left' | 'center' | 'right'; which: 1 | 2 }[] = []
-  if (hasText) {
+  if (hasText && textOnly) {
+    const align = cfg.layout === 'left' ? 'left' : cfg.layout === 'right' ? 'right' : 'center'
+    const ax = align === 'left' ? gx : align === 'right' ? gx + gw : gx + gw / 2
+    let y = gy
+    if (t.h1) { lines.push({ x: ax, y: y + t.h1 * lh, size: lh, align, which: 1 }); y += t.h1 * lh + 0.12 * lh }
+    if (t.h2) lines.push({ x: ax, y: y + t.h2 * lh, size: lh, align, which: 2 })
+  } else if (hasText) {
     if (cfg.layout === 'center') {
       logo.x = gx + (gw - lw) / 2
       let y = gy + lh + gap * lh
@@ -122,9 +150,11 @@ async function logoPage(doc: PDFDocument, logo: Logo, cfg: BannerConfig): Promis
     const t = logo.traced
     const ld = await PDFDocument.create()
     const p = ld.addPage([t.w, t.h])
+    const ink = new Ink(ld)
     for (const path of t.paths) {
       const col = cfg.logoColorMap[path.color] ?? path.color
-      p.drawSvgPath(path.d, { x: 0, y: t.h, color: colorFor(cfg, col), borderWidth: 0 })
+      const { paint, overprint } = paintFor(cfg, col)
+      ink.path(p, path.d, { x: 0, y: t.h, fill: paint, overprint })
     }
     const [emb] = await doc.embedPdf(await ld.save())
     return emb
@@ -156,11 +186,14 @@ export async function buildBannerPdf(cfg: BannerConfig, logo: Logo | null, fileL
   page.setBleedBox(bleedX, bleedX, bleedW, bleedH)
   page.setTrimBox(X(0), Y(cfg.heightMm), cfg.widthMm * g.k, cfg.heightMm * g.k)
 
-  page.drawRectangle({ x: bleedX, y: bleedX, width: bleedW, height: bleedH, color: colorFor(cfg, cfg.bg), borderWidth: 0 })
+  const ink = new Ink(doc)
+  const bgPaint = paintFor(cfg, cfg.bg)
+  ink.path(page, `M0 0H${bleedW}V${bleedH}H0Z`, { x: bleedX, y: bleedX + bleedH, fill: bgPaint.paint })
 
-  if (logo) {
-    const emb = await logoPage(doc, logo, cfg)
-    if (cfg.layout === 'repeat') {
+  const hasText = !!(cfg.text1.trim() || cfg.text2.trim())
+  if (logo || (hasText && cfg.layout !== 'repeat')) {
+    const emb = logo ? await logoPage(doc, logo, cfg) : null
+    if (cfg.layout === 'repeat' && logo && emb) {
       // Every logo sits in the same cell (contained), so mixed shapes still form a regular wall.
       const all = [logo, ...extras]
       const embs = [emb, ...(await Promise.all(extras.map((x) => logoPage(doc, x, cfg))))]
@@ -191,19 +224,21 @@ export async function buildBannerPdf(cfg: BannerConfig, logo: Logo | null, fileL
       const ref = 1000
       const s1 = fonts && t1 ? textToPath(fonts, t1, ref, cfg.tracking) : null
       const s2 = fonts && t2 ? textToPath(fonts, t2, ref * 0.55, cfg.tracking) : null
-      const ts = cfg.textSize / (s1 ? s1.ascent / ref : 1)
+      // text-only banners: the text block itself is the hero, so it starts 3× larger
+      const ts = (cfg.textSize * (logo ? 1 : 3)) / (s1 ? s1.ascent / ref : 1)
       const tm = {
         w1: s1 ? (s1.width / ref) * ts : 0, h1: s1 ? (s1.ascent / ref) * ts : 0,
         w2: s2 ? (s2.width / ref) * ts : 0, h2: s2 ? (s2.ascent / ref) * ts : 0,
       }
-      const L = layoutBoxes(cfg, logo.aspect, s1 || s2 ? tm : null)
-      page.drawPage(emb, { x: X(L.logo.x), y: Y(L.logo.y + L.logo.h), width: L.logo.w * g.k, height: L.logo.h * g.k })
+      const L = layoutBoxes(cfg, logo ? logo.aspect : 1, s1 || s2 ? tm : null, !logo)
+      if (emb) page.drawPage(emb, { x: X(L.logo.x), y: Y(L.logo.y + L.logo.h), width: L.logo.w * g.k, height: L.logo.h * g.k })
+      const tp = paintFor(cfg, cfg.textColor, 'text')
       for (const line of L.lines) {
         const shape = line.which === 1 ? s1! : s2!
         const scale = (line.size * ts / ref) * g.k
         const w = (shape.width / ref) * ts * line.size
         const x = line.align === 'left' ? line.x : line.align === 'center' ? line.x - w / 2 : line.x - w
-        page.drawSvgPath(shape.d, { x: X(x), y: Y(line.y), scale, color: colorFor(cfg, cfg.textColor), borderWidth: 0 })
+        ink.path(page, shape.d, { x: X(x), y: Y(line.y), scale, fill: tp.paint, overprint: tp.overprint })
       }
     }
   }
@@ -214,7 +249,8 @@ export async function buildBannerPdf(cfg: BannerConfig, logo: Logo | null, fileL
     const x = cfg.qrCorner.endsWith('l') ? cfg.safeMm : cfg.widthMm - cfg.safeMm - s
     const y = cfg.qrCorner.startsWith('t') ? cfg.safeMm : cfg.heightMm - cfg.safeMm - s
     if (cfg.qrTile) page.drawRectangle({ x: X(x), y: Y(y + s), width: s * g.k, height: s * g.k, color: colorFor(cfg, '#ffffff'), borderWidth: 0 })
-    page.drawSvgPath(d, { x: X(x), y: Y(y), scale: (s * g.k) / size, color: colorFor(cfg, cfg.qrTile ? '#000000' : cfg.textColor), borderWidth: 0 })
+    // QR modules: plain process colour (spot/rich black can blur the tiny squares)
+    page.drawSvgPath(d, { x: X(x), y: Y(y), scale: (s * g.k) / size, color: cfg.qrTile ? (cfg.colorMode === 'cmyk' ? cmyk(0, 0, 0, 1) : rgb(0, 0, 0)) : colorFor(cfg, cfg.textColor), borderWidth: 0 })
   }
 
   if (cfg.cropMarks) {
@@ -229,7 +265,7 @@ export async function buildBannerPdf(cfg: BannerConfig, logo: Logo | null, fileL
     }
     for (const [a, b, c, d] of marks) page.drawLine({ start: { x: X(a), y: Y(b) }, end: { x: X(c), y: Y(d) }, thickness: th, color: reg })
     const helv = await doc.embedFont(StandardFonts.Helvetica)
-    const info = `${fileLabel.replace(/[^\x20-\x7e]/g, '')}  |  trim ${cfg.widthMm} x ${cfg.heightMm} mm  |  bleed ${cfg.bleedMm} mm  |  ${cfg.colorMode.toUpperCase()}${g.scale !== 1 ? '  |  SCALE 1:10 - print at 1000%' : ''}`
+    const info = `${fileLabel.replace(/[^\x20-\x7e]/g, '')}  |  trim ${cfg.widthMm} x ${cfg.heightMm} mm  |  bleed ${cfg.bleedMm} mm  |  ${cfg.colorMode.toUpperCase()}${Object.keys(cfg.spots).length && cfg.colorMode === 'cmyk' ? `  |  spot: ${Object.values(cfg.spots).map((x) => x.name).join(', ').replace(/[^\x20-\x7e]/g, '')}` : ''}${g.scale !== 1 ? '  |  SCALE 1:10 - print at 1000%' : ''}`
     page.drawText(info, { x: X(0), y: g.pageH - g.slug * g.k * 0.55, size: Math.max(4, 7 * g.scale * 1.6), font: helv, color: reg })
   }
 

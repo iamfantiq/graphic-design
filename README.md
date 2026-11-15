@@ -40,6 +40,10 @@ Turns a logo into a clean **vector PDF** for large-format print.
 - **Phone preview**: generic feed, story, profile grid (3:4 tiles, the whole batch) and video mock-ups for checking crops and UI overlap before posting.
 - **Adapt edited designs**: the editor re-flows your own edits into any other format (anchors, stretching bands, re-cropped photos), as an editable copy or straight into a ZIP of all social formats.
 - **Design files**: save and open `.formatter.json` to move designs between devices or share them with a colleague.
+- **Spot & fluorescent inks**: any banner colour (or brand-kit colour) can print as a named spot ink, such as PANTONE 806 C fluorescent pink. It is written as a real PDF Separation colour space with a CMYK fallback, so the RIP can run it as its own ink.
+- **Rich black & overprint**: optional 60/40/40/100 rich black for large black areas. Black text overprints by default, so no white gaps appear if the print plates are slightly misaligned.
+- **Text-only banners**: no logo needed. The text block scales to fill the safe area.
+- **Video export (MP4)**: the Resizer exports story/post videos with slow zoom, pan or pop-in. The editor exports *motion posters* where layers rise, fade or scale in one by one. Encoding is H.264 via WebCodecs in the browser, faster than real time.
 - **Installable / offline**: PWA manifest and service worker. Everything except AI works without a connection.
 
 ### 3. Print Check (preflight)

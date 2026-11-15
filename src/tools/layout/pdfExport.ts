@@ -6,6 +6,7 @@ import { Circle, FabricImage, Line, Path, Rect, Textbox, util, type Canvas, type
 import { hexToRgb, outOfGamut, rgbToCmyk } from '../../lib/color'
 import { fontStack, glyphFor } from '../../lib/fontFiles'
 import { pathToD } from '../../lib/pathData'
+import { Ink, type Paint, type Spot } from '../../lib/pdfInk'
 
 export interface PdfOptions {
   widthMm: number
@@ -14,6 +15,10 @@ export interface PdfOptions {
   cropMarks: boolean
   colorMode: 'rgb' | 'cmyk'
   cmykOverrides?: Record<string, [number, number, number, number]>
+  /** hex colours printed as named spot inks */
+  spots?: Record<string, Spot>
+  /** black text overprints, so no white gaps appear if plates shift */
+  overprintBlack?: boolean
   title: string
 }
 
@@ -70,11 +75,18 @@ export async function exportVectorPdf(canvas: Canvas, W: number, H: number, opt:
 
   const vivid = new Set<string>()
   const col = (hex: string): Color => {
-    if (opt.colorMode === 'cmyk' && !opt.cmykOverrides?.[hex] && outOfGamut(hex)) vivid.add(hex)
+    if (opt.colorMode === 'cmyk' && !opt.cmykOverrides?.[hex] && !opt.spots?.[hex] && outOfGamut(hex)) vivid.add(hex)
     const [r, g, b] = hexToRgb(hex)
     if (opt.colorMode === 'rgb') return rgb(r / 255, g / 255, b / 255)
     const c = opt.cmykOverrides?.[hex] ?? rgbToCmyk([r, g, b])
     return cmyk(c[0] / 100, c[1] / 100, c[2] / 100, c[3] / 100)
+  }
+ const ink = new Ink(doc)
+  const isBlack = (hex: string) => { const [r, g, b] = hexToRgb(hex); return Math.max(r, g, b) <= 40 && Math.max(r, g, b) - Math.min(r, g, b) <= 12 }
+  const paintOf = (hex: string, role: 'text' | 'area'): { paint: Paint; overprint: boolean } => {
+    if (opt.colorMode === 'cmyk' && opt.spots?.[hex]) return { paint: { spot: opt.spots[hex] }, overprint: false }
+    if (opt.colorMode === 'cmyk' && role === 'text' && opt.overprintBlack !== false && isBlack(hex)) return { paint: { color: cmyk(0, 0, 0, 1) }, overprint: true }
+    return { paint: { color: col(hex) }, overprint: false }
   }
   const withMatrix = (p: PDFPage, m: M, draw: () => void) => {
     p.pushOperators(pushGraphicsState(), concatTransformationMatrix(...m))
@@ -129,7 +141,8 @@ export async function exportVectorPdf(canvas: Canvas, W: number, H: number, opt:
         }
         y += obj.getHeightOfLine(i)
       }
-      if (d) withMatrix(page, mul(mul(BASE, M0), FLIP), () => page.drawSvgPath(d, { x: 0, y: 0, color: col(fill.hex), opacity: opacity * fill.alpha, borderWidth: 0 }))
+      const tp = paintOf(fill.hex, 'text')
+      if (d) withMatrix(page, mul(mul(BASE, M0), FLIP), () => ink.path(page, d, { fill: tp.paint, fillAlpha: opacity * fill.alpha, overprint: tp.overprint }))
       continue
     }
 
@@ -195,14 +208,13 @@ export async function exportVectorPdf(canvas: Canvas, W: number, H: number, opt:
     const stroke = parseColor(obj.stroke)
     const sw = obj.strokeWidth ?? 0
     if (!fill && !(stroke && sw > 0)) continue
-    withMatrix(page, mul(mul(mul(BASE, M0), local), FLIP), () => page.drawSvgPath(d, {
-      x: 0, y: 0,
-      color: fill ? col(fill.hex) : undefined,
-      opacity: fill ? opacity * fill.alpha : undefined,
-      borderColor: stroke && sw > 0 ? col(stroke.hex) : undefined,
-      borderWidth: stroke && sw > 0 ? sw : 0,
-      borderOpacity: stroke ? opacity * stroke.alpha : undefined,
-      borderLineCap: obj instanceof Line ? 0 : undefined,
+    withMatrix(page, mul(mul(mul(BASE, M0), local), FLIP), () => ink.path(page, d, {
+      fill: fill ? paintOf(fill.hex, 'area').paint : undefined,
+      fillAlpha: fill ? opacity * fill.alpha : 1,
+      stroke: stroke && sw > 0 ? paintOf(stroke.hex, 'area').paint : undefined,
+      strokeWidth: sw,
+      strokeAlpha: stroke ? opacity * stroke.alpha : 1,
+      lineCap: obj instanceof Line ? 0 : undefined,
     }))
     } catch (e) {
       const nm = (obj as FabricObject & { name?: string }).name ?? obj.type
@@ -224,6 +236,7 @@ export async function exportVectorPdf(canvas: Canvas, W: number, H: number, opt:
     page.drawText(`${opt.title.replace(/[^\x20-\x7e]/g, '')}  |  ${opt.widthMm} x ${opt.heightMm} mm  |  bleed ${opt.bleedMm} mm  |  ${opt.colorMode.toUpperCase()}`,
       { x: off, y: pageH - slug * ptPerMm * 0.6, size: 6, font: helv, color: reg })
   }
+  if (opt.spots && Object.keys(opt.spots).length && opt.colorMode === 'cmyk') warnings.push(`Spot inks used: ${[...new Set(Object.values(opt.spots).map((x) => x.name))].join(', ')} — confirm the printer runs them as separate inks.`)
   if (vivid.size) warnings.push(`${[...vivid].map((h) => h.toUpperCase()).join(', ')} ${vivid.size > 1 ? 'are' : 'is'} brighter than CMYK ink can print — ${vivid.size > 1 ? 'they' : 'it'} will come out duller. Ask for a printed proof, or use a spot/fluorescent ink.`)
   if (imageCount && opt.colorMode === 'cmyk') warnings.push('Photos stay RGB inside the PDF — the printer converts them. Shapes and text are CMYK.')
   return { bytes: await doc.save(), warnings }

@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Download, RotateCcw, Copy, Package, Sparkles, X, KeyRound, ScanSearch } from 'lucide-react'
+import { Download, RotateCcw, Copy, Package, Sparkles, X, KeyRound, ScanSearch, Film } from 'lucide-react'
 import { Button, Dropzone, Panel, Segmented, Slider, Toggle, ColorInput, Spinner, Select, TextInput } from '../../components/ui'
 import { ACCEPT_DESIGN, loadSource, type LoadedSource } from '../../lib/files'
 import { baseName, canvasToBlob, downloadBlob, downloadZip } from '../../lib/download'
 import { contentBox, foregroundMask, normaliseAnalysis, type AiResult, type Mask } from '../../lib/smart'
 import { aiStatus, analyzePoster, getCode, setCode, type AiStatus } from '../../lib/ai'
 import Mockups from './Mockups'
+import { ease, encodeMp4, videoSupported } from '../../lib/video'
 import {
   analyse, DEFAULT_ADJUST, DEFAULT_FORMATS, FORMATS, renderFormat, resolveFill, resolvePlacement,
   type Adjust, type Fill, type FormatSpec, type Placement, type SourceInfo,
@@ -122,6 +123,9 @@ export default function Resizer({ handoff }: { handoff?: LoadedSource | null }) 
   const [showSafe, setShowSafe] = useState(true)
   const [showBoxes, setShowBoxes] = useState(true)
   const [view, setView] = useState<'formats' | 'mockups'>('formats')
+  const [motion, setMotion] = useState<{ effect: 'zoom' | 'pan' | 'pop'; seconds: number }>({ effect: 'zoom', seconds: 6 })
+  const [videoBusy, setVideoBusy] = useState<string | null>(null)
+  const [videoErr, setVideoErr] = useState<string | null>(null)
   const [carousel, setCarousel] = useState<{ on: boolean; n: number; ratio: '4:5' | '1:1' }>({ on: false, n: 3, ratio: '4:5' })
   const [exporting, setExporting] = useState(false)
   const [ai, setAi] = useState<AiStatus | null>(null)
@@ -211,6 +215,38 @@ export default function Resizer({ handoff }: { handoff?: LoadedSource | null }) 
         for (const file of await renderFiles(it, f)) files.push({ name: (multi ? `${name(it)}/` : '') + file.name, data: file.data })
       await downloadZip(files, multi ? `formatter_batch_${items.length}-files.zip` : `${name(items[0])}_social.zip`)
     } finally { setExporting(false) }
+  }
+
+  async function exportVideo(it: Item, fmt: FormatSpec) {
+    setVideoErr(null); setVideoBusy('Rendering… 0%')
+    try {
+      // render one sharp still with headroom, then animate the camera over it
+      const head = 1.15
+      const still = document.createElement('canvas')
+      renderFormat(it.full, fmt, adj(it, fmt.id), still, head, it.ai)
+      const W = fmt.w, H = fmt.h
+      const out = document.createElement('canvas'); out.width = W; out.height = H
+      const ctx = out.getContext('2d')!
+      ctx.imageSmoothingQuality = 'high'
+      const { blob, codec } = await encodeMp4({
+        width: W, height: H, seconds: motion.seconds,
+        onProgress: (p) => setVideoBusy(`Rendering… ${Math.round(p * 100)}%`),
+        draw: (_i, t) => {
+          const p = t / motion.seconds
+          ctx.globalAlpha = 1
+          ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H)
+          let s = 1, dy = 0
+          if (motion.effect === 'zoom') s = 1 + 0.1 * ease.inOutSine(p)
+          if (motion.effect === 'pan') { s = 1.12; dy = ((H * s - H) / 2) * (1 - 2 * ease.inOutSine(p)) }
+          if (motion.effect === 'pop') { const q = ease.outCubic(t / 0.9); s = 0.88 + 0.12 * q + 0.03 * p; ctx.globalAlpha = q }
+          ctx.drawImage(still, (W - W * s) / 2, (H - H * s) / 2 + dy, W * s, H * s)
+          return out
+        },
+      })
+      downloadBlob(blob, `${name(it)}_${fmt.short.replace(':', 'x')}_${motion.effect}_${motion.seconds}s.mp4`)
+      setVideoBusy(null)
+      if (codec !== 'H.264') setVideoErr('Saved as VP9 — this browser has no H.264 encoder. Chrome/Safari give the most compatible MP4.')
+    } catch (e) { setVideoErr((e as Error).message); setVideoBusy(null) }
   }
 
   const thumbs = useMemo(() => Object.fromEntries(items.map((i) => [i.id, downscale(i.preview.canvas, 420).toDataURL('image/jpeg', 0.8)])), [items.length]) // eslint-disable-line
@@ -389,6 +425,20 @@ export default function Resizer({ handoff }: { handoff?: LoadedSource | null }) 
               </ul>
             ) : <p className="text-xs text-ink-400">The pink frame is the content area detected on your device. Smart crop keeps it fully visible in every format and crops only empty margins.</p>}
           </Panel>
+
+          {!sel.slices && videoSupported() && (
+            <Panel title="Video (MP4)">
+              <Segmented value={motion.effect} onChange={(v) => setMotion({ ...motion, effect: v })}
+                options={[{ value: 'zoom', label: 'Slow zoom' }, { value: 'pan', label: 'Pan' }, { value: 'pop', label: 'Pop in' }]} />
+              <Segmented value={String(motion.seconds)} onChange={(v) => setMotion({ ...motion, seconds: Number(v) })}
+                options={[5, 6, 8, 10, 15].map((s) => ({ value: String(s), label: `${s}s` }))} />
+              <Button className="w-full" onClick={() => exportVideo(item, sel)} disabled={!!videoBusy}>
+                {videoBusy ? <Spinner label={videoBusy} /> : <><Film className="h-4 w-4" />{sel.short} video</>}
+              </Button>
+              {videoErr && <p className="text-xs text-amber-300">{videoErr}</p>}
+              <p className="text-xs text-ink-400">Stories and Reels get more reach as video than as a still. Rendered on your device, 30 fps.</p>
+            </Panel>
+          )}
 
           <Panel title="Download">
             <Button className="w-full" onClick={async () => {
